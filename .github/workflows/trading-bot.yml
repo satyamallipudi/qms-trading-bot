@@ -10,6 +10,15 @@ on:
     - cron: '30 13 * * 1'  # EDT period
     - cron: '30 14 * * 1'  # EST period
   workflow_dispatch:  # Allows manual triggering from GitHub UI
+    inputs:
+      force_run:
+        description: 'Execute trades (true) or dry-run (false)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   rebalance:
@@ -46,6 +55,12 @@ jobs:
           # Trading Configuration (non-sensitive, use vars)
           INITIAL_CAPITAL: ${{ vars.INITIAL_CAPITAL }}
           SCHEDULER_MODE: external  # Required for GitHub Actions
+          
+          # Execution Control
+          # For manual triggers: use input value (defaults to 'false' = dry-run)
+          #   Can override with vars.FORCE_RUN if input not explicitly set
+          # For scheduled runs: always execute (FORCE_RUN not checked, but can be set for consistency)
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force_run || vars.FORCE_RUN || 'false' }}
           
           # Email Configuration (optional)
           EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED }}
