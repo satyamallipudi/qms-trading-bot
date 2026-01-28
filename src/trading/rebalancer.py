@@ -36,17 +36,24 @@ class Rebalancer:
     
     def rebalance(self) -> TradeSummary:
         """
-        Execute portfolio rebalancing.
+        Execute portfolio rebalancing based on week-over-week leaderboard comparison.
         
         Returns:
             TradeSummary with details of executed trades
         """
         logger.info("Starting portfolio rebalancing")
         
-        # Fetch leaderboard top 5
+        # Fetch current week (week-1) and previous week (week-2) leaderboards
         try:
-            leaderboard_symbols = self.leaderboard_client.get_top_symbols(top_n=5)
-            logger.info(f"Leaderboard top 5: {leaderboard_symbols}")
+            # Current week (week-1): previous Sunday
+            current_week_mom_day = self.leaderboard_client._get_previous_sunday()
+            current_week_symbols = self.leaderboard_client.get_top_symbols(top_n=5, mom_day=current_week_mom_day)
+            logger.info(f"Current week (week-1) leaderboard top 5: {current_week_symbols}")
+            
+            # Previous week (week-2): Sunday from two weeks ago
+            previous_week_mom_day = self.leaderboard_client._get_previous_week_sunday()
+            previous_week_symbols = self.leaderboard_client.get_top_symbols(top_n=5, mom_day=previous_week_mom_day)
+            logger.info(f"Previous week (week-2) leaderboard top 5: {previous_week_symbols}")
         except Exception as e:
             logger.error(f"Error fetching leaderboard: {e}")
             raise
@@ -60,24 +67,36 @@ class Rebalancer:
             logger.error(f"Error getting current allocation: {e}")
             raise
         
-        # Normalize leaderboard symbols to uppercase
-        leaderboard_symbols_upper = [s.upper() for s in leaderboard_symbols]
+        # Normalize symbols to uppercase
+        current_week_symbols_upper = [s.upper() for s in current_week_symbols]
+        previous_week_symbols_upper = [s.upper() for s in previous_week_symbols]
+        previous_week_symbols_set = {s.upper() for s in previous_week_symbols}
         
-        # Check if rebalancing is needed
-        if not current_allocations:
-            # No current allocation - initial setup
-            logger.info("No current positions found. Performing initial allocation")
-            return self._initial_allocation(leaderboard_symbols_upper)
+        # Check if any stocks from previous week's LB exist in current positions
+        positions_from_prev_week = current_symbols & previous_week_symbols_set
         
-        # Check if current allocation matches leaderboard
-        if self._allocations_match(current_allocations, leaderboard_symbols_upper):
-            logger.info("Current allocation matches leaderboard. No rebalancing needed.")
-            # Still create a summary for email
-            return self._create_summary([], [], current_allocations)
+        # Get cash balance
+        try:
+            cash_balance = self.broker.get_account_cash()
+            logger.info(f"Current cash balance: ${cash_balance}")
+        except Exception as e:
+            logger.error(f"Error getting account cash: {e}")
+            raise
         
-        # Rebalancing needed
-        logger.info("Rebalancing needed. Executing trades...")
-        return self._execute_rebalancing(current_allocations, leaderboard_symbols_upper)
+        # Case 1: No stocks from previous week's LB exist and 10k cash balance exists
+        if not positions_from_prev_week and cash_balance >= 10000.0:
+            logger.info("No stocks from previous week's LB exist and cash balance >= $10k. Entering trades for top 5 stocks using initial_capital.")
+            return self._initial_allocation(current_week_symbols_upper, self.initial_capital)
+        
+        # Case 2: Compare top 5 stocks between LB-1 and LB
+        # Sell stocks that were in last week's top 5 but aren't in this week's top 5
+        # Buy stocks that entered this week's top 5
+        logger.info("Comparing leaderboards and executing rebalancing...")
+        return self._execute_week_over_week_rebalancing(
+            current_allocations,
+            current_week_symbols_upper,
+            previous_week_symbols_upper
+        )
     
     def _allocations_match(self, allocations: List[Allocation], target_symbols: List[str]) -> bool:
         """Check if current allocations match target symbols."""
@@ -87,12 +106,19 @@ class Rebalancer:
         # Check if we have exactly the top 5 symbols
         return current_symbols == target_set and len(current_symbols) == 5
     
-    def _initial_allocation(self, symbols: List[str]) -> TradeSummary:
-        """Perform initial allocation when portfolio is empty."""
-        buys = []
-        allocation_per_stock = self.initial_capital / len(symbols)
+    def _initial_allocation(self, symbols: List[str], amount: Optional[float] = None) -> TradeSummary:
+        """
+        Perform initial allocation when portfolio is empty.
         
-        logger.info(f"Dividing ${self.initial_capital} into {len(symbols)} stocks: ${allocation_per_stock} each")
+        Args:
+            symbols: List of symbols to buy
+            amount: Amount to allocate. If None, uses initial_capital.
+        """
+        buys = []
+        allocation_amount = amount if amount is not None else self.initial_capital
+        allocation_per_stock = allocation_amount / len(symbols)
+        
+        logger.info(f"Dividing ${allocation_amount} into {len(symbols)} stocks: ${allocation_per_stock} each")
         
         for symbol in symbols:
             try:
@@ -124,25 +150,33 @@ class Rebalancer:
         
         return self._create_summary(buys, [], final_allocations)
     
-    def _execute_rebalancing(
+    def _execute_week_over_week_rebalancing(
         self,
         current_allocations: List[Allocation],
-        target_symbols: List[str],
+        current_week_symbols: List[str],
+        previous_week_symbols: List[str],
     ) -> TradeSummary:
-        """Execute rebalancing trades."""
+        """
+        Execute rebalancing based on week-over-week leaderboard comparison.
+        
+        Sell stocks that were in last week's top 5 but aren't in this week's top 5.
+        Buy stocks that entered this week's top 5.
+        """
         current_symbols = {alloc.symbol.upper() for alloc in current_allocations}
-        target_set = {s.upper() for s in target_symbols}
+        current_week_set = {s.upper() for s in current_week_symbols}
+        previous_week_set = {s.upper() for s in previous_week_symbols}
         
-        # Find symbols to sell (not in top 5)
-        symbols_to_sell = current_symbols - target_set
+        # Find symbols to sell: were in previous week's top 5 but not in current week's top 5
+        # Only sell if we actually hold them
+        symbols_to_sell = (previous_week_set - current_week_set) & current_symbols
         
-        # Find symbols to buy (in top 5 but not currently held)
-        symbols_to_buy = target_set - current_symbols
+        # Find symbols to buy: in current week's top 5 but not currently held
+        symbols_to_buy = current_week_set - current_symbols
         
         sells = []
         buys = []
         
-        # Sell positions not in top 5
+        # Sell positions that dropped out of top 5
         total_proceeds = 0.0
         for symbol in symbols_to_sell:
             allocation = next((a for a in current_allocations if a.symbol.upper() == symbol), None)
@@ -156,7 +190,7 @@ class Rebalancer:
                             "proceeds": allocation.market_value,
                         })
                         total_proceeds += allocation.market_value
-                        logger.info(f"Sold {allocation.quantity} shares of {symbol} for ${allocation.market_value}")
+                        logger.info(f"Sold {allocation.quantity} shares of {symbol} for ${allocation.market_value} (dropped out of top 5)")
                     else:
                         logger.warning(f"Failed to sell {symbol}")
                 except Exception as e:
@@ -170,10 +204,10 @@ class Rebalancer:
             logger.error(f"Error getting account cash: {e}")
             available_cash = total_proceeds
         
-        # Buy missing positions (equal weight)
+        # Buy new positions that entered top 5 (equal weight)
         if symbols_to_buy:
             allocation_per_stock = available_cash / len(symbols_to_buy)
-            logger.info(f"Buying {len(symbols_to_buy)} stocks with ${allocation_per_stock} each")
+            logger.info(f"Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each")
             
             for symbol in symbols_to_buy:
                 try:
@@ -184,7 +218,7 @@ class Rebalancer:
                             "quantity": 0,  # Will be updated
                             "cost": allocation_per_stock,
                         })
-                        logger.info(f"Bought ${allocation_per_stock} of {symbol}")
+                        logger.info(f"Bought ${allocation_per_stock} of {symbol} (entered top 5)")
                     else:
                         logger.warning(f"Failed to buy {symbol}")
                 except Exception as e:
@@ -202,6 +236,9 @@ class Rebalancer:
         except Exception as e:
             logger.error(f"Error getting final allocations: {e}")
             final_allocations = []
+        
+        if not sells and not buys:
+            logger.info("No rebalancing needed - all positions match leaderboard changes")
         
         return self._create_summary(buys, sells, final_allocations)
     

@@ -2,7 +2,8 @@
 
 import logging
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -42,12 +43,42 @@ class LeaderboardClient:
             "Content-Type": "application/json",
         })
     
-    def get_top_symbols(self, top_n: int = 5) -> List[str]:
+    def _get_previous_sunday(self) -> str:
+        """
+        Calculate the date of the previous Sunday.
+        
+        Returns:
+            Date string in YYYY-MM-DD format
+        """
+        today = datetime.now()
+        # Calculate days to subtract to get to the previous Sunday
+        # Monday = 0, Sunday = 6
+        days_since_sunday = (today.weekday() + 1) % 7
+        if days_since_sunday == 0:
+            # If today is Sunday, get last Sunday (7 days ago)
+            days_since_sunday = 7
+        
+        previous_sunday = today - timedelta(days=days_since_sunday)
+        return previous_sunday.strftime("%Y-%m-%d")
+    
+    def _get_previous_week_sunday(self) -> str:
+        """
+        Calculate the date of the Sunday from two weeks ago (previous week).
+        
+        Returns:
+            Date string in YYYY-MM-DD format
+        """
+        previous_sunday = datetime.strptime(self._get_previous_sunday(), "%Y-%m-%d")
+        previous_week_sunday = previous_sunday - timedelta(days=7)
+        return previous_week_sunday.strftime("%Y-%m-%d")
+    
+    def get_top_symbols(self, top_n: int = 5, mom_day: Optional[str] = None) -> List[str]:
         """
         Fetch top N symbols from leaderboard.
         
         Args:
             top_n: Number of top symbols to return (default: 5)
+            mom_day: Optional date string in YYYY-MM-DD format. If not provided, uses previous Sunday.
             
         Returns:
             List of stock symbols (strings)
@@ -56,8 +87,23 @@ class LeaderboardClient:
             requests.RequestException: If API request fails
         """
         try:
-            logger.info(f"Fetching top {top_n} symbols from leaderboard API")
-            response = self.session.get(self.api_url, timeout=30)
+            # Use provided mom_day or calculate previous Sunday
+            if mom_day is None:
+                mom_day = self._get_previous_sunday()
+            
+            # Prepare POST request body
+            request_body = {
+                "indexId": "13",
+                "algoId": "1",
+                "momDay": mom_day
+            }
+            
+            logger.info(f"Fetching top {top_n} symbols from leaderboard API with momDay={mom_day}")
+            response = self.session.post(
+                self.api_url,
+                json=request_body,
+                timeout=30
+            )
             response.raise_for_status()
             
             data = response.json()

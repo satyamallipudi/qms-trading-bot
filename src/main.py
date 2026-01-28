@@ -4,6 +4,8 @@ import logging
 import signal
 import sys
 from typing import Optional
+from datetime import datetime
+import pytz
 
 from .config import get_config
 from .broker import create_broker
@@ -95,8 +97,58 @@ class TradingBot:
             )
             logger.info(f"Initialized webhook endpoint on port {self.config.scheduler.webhook_port}")
     
+    def _is_market_open_time(self) -> bool:
+        """
+        Check if current time is 9:30 AM Eastern Time (market open).
+        This ensures timezone-aware scheduling works correctly with DST.
+        Allows a 5-minute window (9:28-9:33 AM) to account for scheduling delays.
+        
+        Returns:
+            True if it's around 9:30 AM ET on Monday, False otherwise
+        """
+        # Get current time in Eastern Time
+        eastern = pytz.timezone('America/New_York')
+        now_et = datetime.now(eastern)
+        
+        # Check if it's Monday
+        is_monday = now_et.weekday() == 0  # Monday is 0
+        
+        if not is_monday:
+            logger.info(
+                f"Skipping execution - not Monday. "
+                f"Current ET time: {now_et.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                f"Day: {now_et.strftime('%A')}"
+            )
+            return False
+        
+        # Check if it's within 5 minutes of 9:30 AM (9:28-9:33 AM)
+        # This accounts for potential GitHub Actions scheduling delays
+        current_minute = now_et.hour * 60 + now_et.minute
+        target_minute = 9 * 60 + 30  # 9:30 AM
+        time_diff = abs(current_minute - target_minute)
+        
+        if time_diff <= 5:  # Within 5 minutes of 9:30 AM
+            logger.info(
+                f"Market open time confirmed: {now_et.strftime('%Y-%m-%d %H:%M:%S %Z')} "
+                f"(within {time_diff} minutes of 9:30 AM ET)"
+            )
+            return True
+        
+        logger.info(
+            f"Skipping execution - not market open time. "
+            f"Current ET time: {now_et.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+            f"Expected: Monday 9:30 AM ET (±5 min)"
+        )
+        return False
+    
     def _execute_rebalancing(self):
         """Execute rebalancing (wrapper for scheduler/webhook)."""
+        # Timezone-aware check: only execute at 9:30 AM Eastern Time
+        # This handles DST automatically since we check the actual ET time
+        if not self._is_market_open_time():
+            logger.info("Not executing rebalancing - not at market open time (9:30 AM ET)")
+            return None
+        
         try:
             logger.info("Executing rebalancing...")
             summary = self.rebalancer.rebalance()

@@ -145,12 +145,16 @@ class Config(BaseModel):
             robinhood_mfa_code=os.getenv("ROBINHOOD_MFA_CODE"),
         )
         
+        # Handle SMTP_PORT with proper default for empty strings
+        smtp_port_str = os.getenv("SMTP_PORT", "587")
+        smtp_port = int(smtp_port_str) if smtp_port_str and smtp_port_str.strip() else 587
+        
         email_config = EmailConfig(
             enabled=os.getenv("EMAIL_ENABLED", "true").lower() == "true",
             recipient=os.getenv("EMAIL_RECIPIENT"),
             provider=os.getenv("EMAIL_PROVIDER", "smtp"),
             smtp_host=os.getenv("SMTP_HOST"),
-            smtp_port=int(os.getenv("SMTP_PORT", "587")),
+            smtp_port=smtp_port,
             smtp_username=os.getenv("SMTP_USERNAME"),
             smtp_password=os.getenv("SMTP_PASSWORD"),
             smtp_from_email=os.getenv("SMTP_FROM_EMAIL"),
@@ -162,17 +166,25 @@ class Config(BaseModel):
             ses_from_email=os.getenv("SES_FROM_EMAIL"),
         )
         
+        # Handle WEBHOOK_PORT with proper default for empty strings
+        webhook_port_str = os.getenv("WEBHOOK_PORT", "8080")
+        webhook_port = int(webhook_port_str) if webhook_port_str and webhook_port_str.strip() else 8080
+        
         scheduler_config = SchedulerConfig(
             mode=os.getenv("SCHEDULER_MODE", "internal"),
             cron_schedule=os.getenv("CRON_SCHEDULE", "0 0 * * 1"),
-            webhook_port=int(os.getenv("WEBHOOK_PORT", "8080")),
+            webhook_port=webhook_port,
             webhook_secret=os.getenv("WEBHOOK_SECRET"),
         )
+        
+        # Handle INITIAL_CAPITAL with proper default for empty strings
+        initial_capital_str = os.getenv("INITIAL_CAPITAL", "10000.0")
+        initial_capital = float(initial_capital_str) if initial_capital_str and initial_capital_str.strip() else 10000.0
         
         config = cls(
             leaderboard_api_url=os.getenv("LEADERBOARD_API_URL", ""),
             leaderboard_api_token=os.getenv("LEADERBOARD_API_TOKEN", ""),
-            initial_capital=float(os.getenv("INITIAL_CAPITAL", "10000.0")),
+            initial_capital=initial_capital,
             broker=broker_config,
             email=email_config,
             scheduler=scheduler_config,

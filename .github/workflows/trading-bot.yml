@@ -2,10 +2,13 @@ name: Trading Bot Rebalancing
 
 on:
   schedule:
-    # Run every Monday at 00:00 UTC
+    # Run every Monday at 9:30 AM Eastern Time (market open) - timezone-aware
     # Format: minute hour day month day-of-week
-    # Adjust the time as needed (times are in UTC)
-    - cron: '0 0 * * 1'
+    # Schedule at both possible UTC times; code will verify correct ET time
+    # 9:30 AM EDT = 13:30 UTC (March-November, Daylight Saving Time)
+    # 9:30 AM EST = 14:30 UTC (November-March, Standard Time)
+    - cron: '30 13 * * 1'  # EDT period
+    - cron: '30 14 * * 1'  # EST period
   workflow_dispatch:  # Allows manual triggering from GitHub UI
 
 jobs:
