@@ -121,7 +121,8 @@ class Rebalancer:
         """
         buys = []
         allocation_amount = amount if amount is not None else self.initial_capital
-        allocation_per_stock = allocation_amount / len(symbols)
+        # Round to 2 decimal places (Alpaca requires notional values to be limited to 2 decimal places)
+        allocation_per_stock = round(allocation_amount / len(symbols), 2)
         
         if dry_run:
             logger.info(f"[DRY-RUN] Would divide ${allocation_amount} into {len(symbols)} stocks: ${allocation_per_stock} each")
@@ -246,7 +247,8 @@ class Rebalancer:
                 logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds from sales. Skipping purchases.")
             else:
                 # Only use proceeds from sales, not the entire cash balance
-                allocation_per_stock = total_proceeds / len(symbols_to_buy)
+                # Round to 2 decimal places (Alpaca requires notional values to be limited to 2 decimal places)
+                allocation_per_stock = round(total_proceeds / len(symbols_to_buy), 2)
                 if dry_run:
                     logger.info(f"[DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using only proceeds from sales: ${total_proceeds})")
                 else:
