@@ -104,12 +104,18 @@ class TradingBot:
         This ensures timezone-aware scheduling works correctly with DST.
         Allows a 5-minute window (9:28-9:33 AM) to account for scheduling delays.
         
-        If FORCE_RUN is set to true, always returns True (allows manual execution).
+        Manual triggers skip day/time check and always return True.
+        Scheduled runs must be on Monday at 9:30 AM ET.
         
         Returns:
-            True if it's around 9:30 AM ET on Monday, or if FORCE_RUN=true, False otherwise
+            True if manual trigger, or if it's around 9:30 AM ET on Monday, False otherwise
         """
-        # Check FORCE_RUN environment variable
+        # Manual triggers skip day/time check
+        if self._is_manual_trigger():
+            logger.info("Manual trigger detected - skipping day/time check")
+            return True
+        
+        # Check FORCE_RUN environment variable (for backward compatibility)
         force_run = os.getenv("FORCE_RUN", "false").lower() == "true"
         if force_run:
             logger.info("FORCE_RUN=true - allowing execution regardless of time/day")
