@@ -228,47 +228,52 @@ class Rebalancer:
                     except Exception as e:
                         logger.error(f"Error selling {symbol}: {e}")
         
-        # Get available cash (from sales + existing cash)
+        # Use only proceeds from sales to buy new stocks
+        # Get current cash balance for logging purposes only
         try:
-            available_cash = self.broker.get_account_cash()
+            current_cash = self.broker.get_account_cash()
             if dry_run:
-                # In dry-run, estimate available cash as current cash + proceeds from sales
-                available_cash = available_cash + total_proceeds
-            logger.info(f"Available cash: ${available_cash}")
+                logger.info(f"Current cash balance: ${current_cash}")
+                logger.info(f"Proceeds from sales: ${total_proceeds}")
+            else:
+                logger.info(f"Available cash: ${current_cash}")
         except Exception as e:
             logger.error(f"Error getting account cash: {e}")
-            available_cash = total_proceeds
         
-        # Buy new positions that entered top 5 (equal weight)
+        # Buy new positions that entered top 5 (equal weight) using only proceeds from sales
         if symbols_to_buy:
-            allocation_per_stock = available_cash / len(symbols_to_buy)
-            if dry_run:
-                logger.info(f"[DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each")
+            if total_proceeds == 0:
+                logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds from sales. Skipping purchases.")
             else:
-                logger.info(f"Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each")
-            
-            for symbol in symbols_to_buy:
+                # Only use proceeds from sales, not the entire cash balance
+                allocation_per_stock = total_proceeds / len(symbols_to_buy)
                 if dry_run:
-                    buys.append({
-                        "symbol": symbol,
-                        "quantity": 0,  # Will be estimated
-                        "cost": allocation_per_stock,
-                    })
-                    logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (entered top 5)")
+                    logger.info(f"[DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using only proceeds from sales: ${total_proceeds})")
                 else:
-                    try:
-                        success = self.broker.buy(symbol, allocation_per_stock)
-                        if success:
-                            buys.append({
-                                "symbol": symbol,
-                                "quantity": 0,  # Will be updated
-                                "cost": allocation_per_stock,
-                            })
-                            logger.info(f"Bought ${allocation_per_stock} of {symbol} (entered top 5)")
-                        else:
-                            logger.warning(f"Failed to buy {symbol}")
-                    except Exception as e:
-                        logger.error(f"Error buying {symbol}: {e}")
+                    logger.info(f"Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using only proceeds from sales: ${total_proceeds})")
+                
+                for symbol in symbols_to_buy:
+                    if dry_run:
+                        buys.append({
+                            "symbol": symbol,
+                            "quantity": 0,  # Will be estimated
+                            "cost": allocation_per_stock,
+                        })
+                        logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (entered top 5)")
+                    else:
+                        try:
+                            success = self.broker.buy(symbol, allocation_per_stock)
+                            if success:
+                                buys.append({
+                                    "symbol": symbol,
+                                    "quantity": 0,  # Will be updated
+                                    "cost": allocation_per_stock,
+                                })
+                                logger.info(f"Bought ${allocation_per_stock} of {symbol} (entered top 5)")
+                            else:
+                                logger.warning(f"Failed to buy {symbol}")
+                        except Exception as e:
+                            logger.error(f"Error buying {symbol}: {e}")
         
         # Get final allocations (use current if dry-run, since no trades were executed)
         try:
