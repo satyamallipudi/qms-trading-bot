@@ -19,19 +19,16 @@ Get your QMS Trading Bot running on GitHub Actions in 5 minutes!
    - Click **Settings** (top menu)
    - In the left sidebar, click **Secrets and variables** → **Actions**
 
-3. **Add Required Secrets**
-   Click **"New repository secret"** for each one:
+3. **Add Required Secrets and Variables**
 
-   **Minimum Required (to get started):**
+   **Important:** GitHub has two types:
+   - **Secrets** 🔒 - For sensitive data (API keys, passwords)
+   - **Variables** 📝 - For configuration (non-sensitive settings)
+
+   **Add as SECRETS (Settings → Secrets tab):**
    ```
-   Name: LEADERBOARD_API_URL
-   Value: https://your-api.com/leaderboard
-   
    Name: LEADERBOARD_API_TOKEN
    Value: your_token_here
-   
-   Name: BROKER_TYPE
-   Value: alpaca
    
    Name: ALPACA_API_KEY
    Value: your_alpaca_key
@@ -39,41 +36,48 @@ Get your QMS Trading Bot running on GitHub Actions in 5 minutes!
    Name: ALPACA_API_SECRET
    Value: your_alpaca_secret
    
+   Name: EMAIL_RECIPIENT (optional)
+   Value: your_email@example.com
+   
+   Name: SMTP_USERNAME (optional)
+   Value: your_gmail@gmail.com
+   
+   Name: SMTP_PASSWORD (optional)
+   Value: your_app_password
+   
+   Name: SMTP_FROM_EMAIL (optional)
+   Value: your_gmail@gmail.com
+   ```
+
+   **Add as VARIABLES (Settings → Variables tab):**
+   ```
+   Name: LEADERBOARD_API_URL
+   Value: https://your-api.com/leaderboard
+   
+   Name: BROKER_TYPE
+   Value: alpaca
+   
    Name: ALPACA_BASE_URL
    Value: https://paper-api.alpaca.markets
    
    Name: INITIAL_CAPITAL
    Value: 10000.0
-   ```
-
-   **Optional (for email notifications):**
-   ```
-   Name: EMAIL_ENABLED
+   
+   Name: EMAIL_ENABLED (optional)
    Value: true
    
-   Name: EMAIL_RECIPIENT
-   Value: your_email@example.com
-   
-   Name: EMAIL_PROVIDER
+   Name: EMAIL_PROVIDER (optional)
    Value: smtp
    
-   Name: SMTP_HOST
+   Name: SMTP_HOST (optional)
    Value: smtp.gmail.com
    
-   Name: SMTP_PORT
+   Name: SMTP_PORT (optional)
    Value: 587
-   
-   Name: SMTP_USERNAME
-   Value: your_gmail@gmail.com
-   
-   Name: SMTP_PASSWORD
-   Value: your_app_password
-   
-   Name: SMTP_FROM_EMAIL
-   Value: your_gmail@gmail.com
    ```
 
-   > 💡 **Tip:** Copy each secret name exactly as shown (case-sensitive!)
+   > 💡 **Tip:** See [Secrets vs Variables Guide](GITHUB_SECRETS_VS_VARIABLES.md) for details
+   > 💡 **Tip:** Copy each name exactly as shown (case-sensitive!)
 
 ### Step 2: Test the Workflow Manually
 

@@ -29,26 +29,27 @@ jobs:
       
       - name: Run trading bot
         env:
-          # Leaderboard API
+          # Leaderboard API (use secrets for sensitive data)
           LEADERBOARD_API_URL: ${{ secrets.LEADERBOARD_API_URL }}
           LEADERBOARD_API_TOKEN: ${{ secrets.LEADERBOARD_API_TOKEN }}
           
           # Broker Configuration
-          BROKER_TYPE: ${{ secrets.BROKER_TYPE }}
+          # Use vars for non-sensitive config, secrets for sensitive data
+          BROKER_TYPE: ${{ vars.BROKER_TYPE }}
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
-          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+          ALPACA_BASE_URL: ${{ vars.ALPACA_BASE_URL }}
           
-          # Trading Configuration
-          INITIAL_CAPITAL: ${{ secrets.INITIAL_CAPITAL }}
+          # Trading Configuration (non-sensitive, use vars)
+          INITIAL_CAPITAL: ${{ vars.INITIAL_CAPITAL }}
           SCHEDULER_MODE: external  # Required for GitHub Actions
           
           # Email Configuration (optional)
-          EMAIL_ENABLED: ${{ secrets.EMAIL_ENABLED }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED }}
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM_EMAIL: ${{ secrets.SMTP_FROM_EMAIL }}
