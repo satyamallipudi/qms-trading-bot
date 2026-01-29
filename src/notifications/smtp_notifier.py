@@ -39,26 +39,19 @@ class SMTPNotifier(EmailNotifier):
         self.smtp_password = smtp_password
         self.from_email = from_email
     
-    def send_trade_summary(
+    def _send_email(
         self,
         recipient: str,
-        trade_summary,
-        leaderboard_symbols: Optional[List[str]] = None,
-        portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
+        subject: str,
+        text_content: str,
+        html_content: str,
     ) -> bool:
-        """Send trade summary email via SMTP."""
+        """Send email via SMTP."""
         try:
             msg = MIMEMultipart("alternative")
-            subject = "Portfolio Rebalancing Summary"
-            if isinstance(trade_summary, MultiPortfolioSummary):
-                subject = "Multi-Portfolio Rebalancing Summary"
             msg["Subject"] = subject
             msg["From"] = self.from_email
             msg["To"] = recipient
-            
-            # Create text and HTML versions
-            text_content = self._format_trade_summary_text(trade_summary, leaderboard_symbols, portfolio_leaderboards)
-            html_content = self._format_trade_summary_html(trade_summary, leaderboard_symbols, portfolio_leaderboards)
             
             part1 = MIMEText(text_content, "plain")
             part2 = MIMEText(html_content, "html")

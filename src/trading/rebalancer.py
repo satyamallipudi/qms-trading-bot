@@ -73,7 +73,9 @@ class Rebalancer:
         
         # Get current allocation
         try:
-            current_allocations = self.broker.get_current_allocation()
+            all_allocations = self.broker.get_current_allocation()
+            # Filter allocations to only include symbols owned by this portfolio for rebalancing logic
+            current_allocations = self._filter_allocations_by_portfolio(all_allocations)
             current_symbols = {alloc.symbol.upper() for alloc in current_allocations}
             logger.info(f"[{self.portfolio_name}] Current positions: {current_symbols}")
         except Exception as e:
@@ -96,18 +98,19 @@ class Rebalancer:
                 # Continue without reconciliation if there's an error
         
         # Detect external sales if persistence is enabled
+        # Use all_allocations (unfiltered) for external sales detection to compare with DB ownership
         external_sale_proceeds = 0.0
         external_sales_by_symbol = {}  # Track external sales per symbol
         if self.persistence_manager:
             try:
                 logger.info("Checking for external sales...")
-                external_sales = self.persistence_manager.detect_external_sales(current_allocations)
+                external_sales = self.persistence_manager.detect_external_sales(all_allocations, portfolio_name=self.portfolio_name)
                 if external_sales:
                     logger.info(f"Detected {len(external_sales)} external sale(s)")
                     for sale in external_sales:
                         logger.info(f"  - {sale.symbol}: {sale.quantity} shares, ~${sale.estimated_proceeds:.2f}")
                         external_sales_by_symbol[sale.symbol.upper()] = sale
-                    external_sale_proceeds = self.persistence_manager.get_unused_external_sale_proceeds()
+                    external_sale_proceeds = self.persistence_manager.get_unused_external_sale_proceeds(self.portfolio_name)
                     logger.info(f"Total unused external sale proceeds: ${external_sale_proceeds:.2f}")
             except Exception as e:
                 logger.warning(f"Error detecting external sales: {e}")
@@ -226,7 +229,9 @@ class Rebalancer:
         
         # Get updated allocations (or current if dry-run)
         try:
-            final_allocations = self.broker.get_current_allocation()
+            all_allocations = self.broker.get_current_allocation()
+            # Filter allocations to only include symbols owned by this portfolio
+            final_allocations = self._filter_allocations_by_portfolio(all_allocations)
             # Update quantities in buys
             for buy in buys:
                 for alloc in final_allocations:
@@ -486,7 +491,9 @@ class Rebalancer:
         
         # Get final allocations (use current if dry-run, since no trades were executed)
         try:
-            final_allocations = self.broker.get_current_allocation()
+            all_allocations = self.broker.get_current_allocation()
+            # Filter allocations to only include symbols owned by this portfolio
+            final_allocations = self._filter_allocations_by_portfolio(all_allocations)
             # Update quantities in buys (only if not dry-run, since in dry-run we don't have actual quantities)
             if not dry_run:
                 for buy in buys:
@@ -519,6 +526,43 @@ class Rebalancer:
         
         return self._create_summary(buys, sells, final_allocations)
     
+    def _filter_allocations_by_portfolio(self, allocations: List[Allocation]) -> List[Allocation]:
+        """
+        Filter allocations to only include symbols owned by this portfolio.
+        
+        If persistence is enabled, filters by portfolio ownership.
+        If a symbol is owned by multiple portfolios, calculates the portfolio's portion.
+        """
+        if not self.persistence_manager:
+            # No persistence - return all allocations (backward compatibility)
+            return allocations
+        
+        owned_symbols = self.persistence_manager.get_owned_symbols(self.portfolio_name)
+        if not owned_symbols:
+            # No owned symbols - return empty list
+            return []
+        
+        filtered_allocations = []
+        for alloc in allocations:
+            symbol = alloc.symbol.upper()
+            if symbol in owned_symbols:
+                # Check if multiple portfolios own this symbol
+                portfolios_owning = self.persistence_manager.get_all_portfolios_owning_symbol(symbol)
+                if len(portfolios_owning) > 1:
+                    # Multiple portfolios own this - calculate this portfolio's fraction
+                    portfolio_fraction = self.persistence_manager.get_portfolio_fraction(symbol, self.portfolio_name)
+                    filtered_allocations.append(Allocation(
+                        symbol=alloc.symbol,
+                        quantity=alloc.quantity * portfolio_fraction,
+                        current_price=alloc.current_price,
+                        market_value=alloc.market_value * portfolio_fraction,
+                    ))
+                else:
+                    # Only this portfolio owns it - use full allocation
+                    filtered_allocations.append(alloc)
+        
+        return filtered_allocations
+    
     def _create_summary(
         self,
         buys: List[dict],
@@ -526,16 +570,19 @@ class Rebalancer:
         final_allocations: List[Allocation],
     ) -> TradeSummary:
         """Create trade summary."""
+        # Filter allocations to only include symbols owned by this portfolio
+        filtered_allocations = self._filter_allocations_by_portfolio(final_allocations)
+        
         total_cost = sum(buy.get("cost", 0) for buy in buys)
         total_proceeds = sum(sell.get("proceeds", 0) for sell in sells)
-        portfolio_value = sum(alloc.market_value for alloc in final_allocations)
+        portfolio_value = sum(alloc.market_value for alloc in filtered_allocations)
         
         summary = TradeSummary(
             buys=buys,
             sells=sells,
             total_cost=total_cost,
             total_proceeds=total_proceeds,
-            final_allocations=final_allocations,
+            final_allocations=filtered_allocations,
             portfolio_value=portfolio_value,
             portfolio_name=self.portfolio_name,
             initial_capital=self.initial_capital,

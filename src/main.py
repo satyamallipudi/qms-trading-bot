@@ -38,6 +38,7 @@ class TradingBot:
         self.rebalancers: Dict[str, Rebalancer] = {}
         self.scheduler = None
         self.app = None
+        self.persistence_manager = None
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -80,14 +81,14 @@ class TradingBot:
             logger.info("Email notifications disabled")
         
         # Initialize persistence manager if enabled
-        persistence_manager = None
+        self.persistence_manager = None
         if self.config.persistence.enabled:
             try:
                 if not self.config.persistence.is_configured():
                     logger.warning("Persistence enabled but credentials not configured. Disabling persistence.")
                 else:
                     from .persistence import PersistenceManager
-                    persistence_manager = PersistenceManager(
+                    self.persistence_manager = PersistenceManager(
                         project_id=self.config.persistence.project_id,
                         credentials_path=self.config.persistence.credentials_path,
                         credentials_json=self.config.persistence.credentials_json,
@@ -95,10 +96,10 @@ class TradingBot:
                     logger.info("Initialized persistence manager (Firebase Firestore)")
             except Exception as e:
                 logger.warning(f"Failed to initialize persistence manager: {e}. Continuing without persistence.")
-                persistence_manager = None
+                self.persistence_manager = None
         else:
             logger.info("Persistence disabled")
-            persistence_manager = None
+            self.persistence_manager = None
         
         # Initialize rebalancers (one per portfolio)
         self.rebalancers: Dict[str, Rebalancer] = {}
@@ -126,7 +127,7 @@ class TradingBot:
                 portfolio_name=portfolio_config.portfolio_name,
                 index_id=portfolio_config.index_id,
                 email_notifier=self.email_notifier,
-                persistence_manager=persistence_manager,
+                persistence_manager=self.persistence_manager,
             )
             self.rebalancers[portfolio_config.portfolio_name] = rebalancer
             logger.info(f"Initialized rebalancer for {portfolio_config.portfolio_name} portfolio (index {portfolio_config.index_id})")
@@ -306,6 +307,12 @@ class TradingBot:
             if len(portfolio_summaries) > 1:
                 multi_summary = self._create_multi_portfolio_summary(portfolio_summaries, performances)
                 
+                # Fetch ownership records for each portfolio (if persistence enabled)
+                portfolio_ownership = {}
+                if self.persistence_manager:
+                    for portfolio_name in portfolio_summaries.keys():
+                        portfolio_ownership[portfolio_name] = self.persistence_manager.get_portfolio_ownership_records(portfolio_name)
+                
                 # Send email notification if enabled (only in real execution mode)
                 if not dry_run and self.email_notifier and self.config.email.recipient:
                     try:
@@ -313,6 +320,7 @@ class TradingBot:
                             recipient=self.config.email.recipient,
                             trade_summary=multi_summary,
                             portfolio_leaderboards=portfolio_leaderboards,
+                            portfolio_ownership=portfolio_ownership if portfolio_ownership else None,
                         )
                     except Exception as email_error:
                         logger.error(f"Error sending email notification: {email_error}")
@@ -325,6 +333,14 @@ class TradingBot:
                 
                 summary = list(portfolio_summaries.values())[0]
                 
+                # Fetch ownership records for single portfolio (if persistence enabled)
+                portfolio_ownership = None
+                if self.persistence_manager and portfolio_summaries:
+                    portfolio_name = list(portfolio_summaries.keys())[0]
+                    ownership_records = self.persistence_manager.get_portfolio_ownership_records(portfolio_name)
+                    if ownership_records:
+                        portfolio_ownership = {portfolio_name: ownership_records}
+                
                 # Send email notification if enabled (only in real execution mode)
                 if not dry_run and self.email_notifier and self.config.email.recipient:
                     try:
@@ -333,6 +349,7 @@ class TradingBot:
                             recipient=self.config.email.recipient,
                             trade_summary=summary,
                             leaderboard_symbols=leaderboard_symbols,
+                            portfolio_ownership=portfolio_ownership,
                         )
                     except Exception as email_error:
                         logger.error(f"Error sending email notification: {email_error}")
@@ -364,10 +381,12 @@ class TradingBot:
         total_proceeds = trade_summary.total_proceeds
         
         net_invested = total_cost - total_proceeds
-        # Calculate returns based on invested capital (not including cash)
-        total_return = current_value - net_invested
-        total_return_pct = (total_return / net_invested * 100) if net_invested > 0 else 0.0
-        unrealized_pnl = current_value - net_invested
+        # Calculate returns based on initial capital
+        total_return = current_value - initial_capital
+        total_return_pct = (total_return / initial_capital * 100) if initial_capital > 0 else 0.0
+        # Unrealized P&L is the gain/loss on current holdings vs initial capital
+        # This represents the unrealized gain from the initial investment
+        unrealized_pnl = current_value - initial_capital
         realized_pnl = total_proceeds - total_cost
         
         return PortfolioPerformance(
@@ -392,9 +411,9 @@ class TradingBot:
         total_initial_capital = sum(p.initial_capital for p in performances.values())
         total_current_value = sum(p.current_value for p in performances.values())
         total_net_invested = sum(p.net_invested for p in performances.values())
-        # Calculate returns based on invested capital (not including cash)
-        overall_return = total_current_value - total_net_invested
-        overall_return_pct = (overall_return / total_net_invested * 100) if total_net_invested > 0 else 0.0
+        # Calculate returns based on initial capital
+        overall_return = total_current_value - total_initial_capital
+        overall_return_pct = (overall_return / total_initial_capital * 100) if total_initial_capital > 0 else 0.0
         
         return MultiPortfolioSummary(
             portfolios=portfolio_summaries,

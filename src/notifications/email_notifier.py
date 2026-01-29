@@ -10,13 +10,13 @@ from ..broker.models import Allocation, TradeSummary, MultiPortfolioSummary
 class EmailNotifier(ABC):
     """Abstract base class for email notification providers."""
     
-    @abstractmethod
     def send_trade_summary(
         self,
         recipient: str,
         trade_summary: Union[TradeSummary, MultiPortfolioSummary],
         leaderboard_symbols: Optional[List[str]] = None,
         portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
+        portfolio_ownership: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
     ) -> bool:
         """
         Send trade summary email.
@@ -26,6 +26,43 @@ class EmailNotifier(ABC):
             trade_summary: Trade summary data (single or multi-portfolio)
             leaderboard_symbols: List of symbols from leaderboard (for single portfolio)
             portfolio_leaderboards: Dict of portfolio_name -> symbols (for multi-portfolio)
+            portfolio_ownership: Dict of portfolio_name -> {symbol: {quantity, total_cost, avg_price}}
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        # Format content (handled by base class)
+        html_content = self._format_trade_summary_html(
+            trade_summary, leaderboard_symbols, portfolio_leaderboards, portfolio_ownership
+        )
+        text_content = self._format_trade_summary_text(
+            trade_summary, leaderboard_symbols, portfolio_leaderboards, portfolio_ownership
+        )
+        
+        # Determine subject
+        subject = "Portfolio Rebalancing Summary"
+        if isinstance(trade_summary, MultiPortfolioSummary):
+            subject = "Multi-Portfolio Rebalancing Summary"
+        
+        # Delegate actual sending to concrete implementation
+        return self._send_email(recipient, subject, text_content, html_content)
+    
+    @abstractmethod
+    def _send_email(
+        self,
+        recipient: str,
+        subject: str,
+        text_content: str,
+        html_content: str,
+    ) -> bool:
+        """
+        Send email (implemented by concrete classes).
+        
+        Args:
+            recipient: Email recipient address
+            subject: Email subject
+            text_content: Plain text email content
+            html_content: HTML email content
             
         Returns:
             True if email sent successfully, False otherwise
@@ -57,11 +94,12 @@ class EmailNotifier(ABC):
         trade_summary: Union[TradeSummary, MultiPortfolioSummary],
         leaderboard_symbols: Optional[List[str]] = None,
         portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
+        portfolio_ownership: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
     ) -> str:
         """Format trade summary as HTML email."""
         # Check if it's multi-portfolio summary
         if isinstance(trade_summary, MultiPortfolioSummary):
-            return self._format_multi_portfolio_html(trade_summary, portfolio_leaderboards or {})
+            return self._format_multi_portfolio_html(trade_summary, portfolio_leaderboards or {}, portfolio_ownership)
         
         # Single portfolio format
         html = f"""
@@ -164,6 +202,7 @@ class EmailNotifier(ABC):
         self,
         multi_summary: MultiPortfolioSummary,
         portfolio_leaderboards: Dict[str, List[str]],
+        portfolio_ownership: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
     ) -> str:
         """Format multi-portfolio summary as HTML email."""
         html = f"""
@@ -304,6 +343,52 @@ class EmailNotifier(ABC):
                     """
                 html += "</table>"
             
+            # Add current holdings with purchase prices and gains
+            if summary.final_allocations:
+                ownership_data = (portfolio_ownership or {}).get(portfolio_name, {})
+                html += """
+                <h4>Current Holdings</h4>
+                <table>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Quantity</th>
+                        <th>Purchase Price</th>
+                        <th>Current Price</th>
+                        <th>Cost Basis</th>
+                        <th>Market Value</th>
+                        <th>Gain/Loss</th>
+                        <th>Gain %</th>
+                    </tr>
+                """
+                for allocation in summary.final_allocations:
+                    symbol = allocation.symbol.upper()
+                    ownership = ownership_data.get(symbol, {})
+                    avg_price = ownership.get('avg_price', 0.0)
+                    cost_basis = ownership.get('total_cost', 0.0)
+                    
+                    # If we don't have ownership data, use current price as estimate
+                    if avg_price == 0.0 and allocation.current_price > 0:
+                        avg_price = allocation.current_price
+                        cost_basis = allocation.market_value
+                    
+                    gain_loss = allocation.market_value - cost_basis
+                    gain_pct = (gain_loss / cost_basis * 100) if cost_basis > 0 else 0.0
+                    gain_class = "positive" if gain_loss >= 0 else "negative"
+                    
+                    html += f"""
+                    <tr>
+                        <td>{allocation.symbol}</td>
+                        <td>{allocation.quantity:.2f}</td>
+                        <td>${avg_price:.2f}</td>
+                        <td>${allocation.current_price:.2f}</td>
+                        <td>${cost_basis:.2f}</td>
+                        <td>${allocation.market_value:.2f}</td>
+                        <td class="{gain_class}">${gain_loss:.2f}</td>
+                        <td class="{gain_class}">{gain_pct:.2f}%</td>
+                    </tr>
+                    """
+                html += "</table>"
+            
             html += f"""
                 <p><strong>Portfolio Value:</strong> ${summary.portfolio_value:,.2f}</p>
             </div>
@@ -375,11 +460,12 @@ class EmailNotifier(ABC):
         trade_summary: Union[TradeSummary, MultiPortfolioSummary],
         leaderboard_symbols: Optional[List[str]] = None,
         portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
+        portfolio_ownership: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
     ) -> str:
         """Format trade summary as plain text email."""
         # Check if it's multi-portfolio summary
         if isinstance(trade_summary, MultiPortfolioSummary):
-            return self._format_multi_portfolio_text(trade_summary, portfolio_leaderboards or {})
+            return self._format_multi_portfolio_text(trade_summary, portfolio_leaderboards or {}, portfolio_ownership)
         
         # Single portfolio format
         text = f"""
@@ -414,6 +500,7 @@ Leaderboard Top 5: {', '.join(leaderboard_symbols or [])}
         self,
         multi_summary: MultiPortfolioSummary,
         portfolio_leaderboards: Dict[str, List[str]],
+        portfolio_ownership: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
     ) -> str:
         """Format multi-portfolio summary as plain text email."""
         text = f"""
@@ -461,6 +548,31 @@ Performance: ${performance.total_return:,.2f} ({performance.total_return_pct:.2f
                 text += "Stocks Bought:\n"
                 for buy in summary.buys:
                     text += f"  - {buy['symbol']}: {buy['quantity']:.2f} shares, ${buy['cost']:.2f}\n"
+                text += "\n"
+            
+            # Add current holdings with purchase prices and gains
+            if summary.final_allocations:
+                ownership_data = (portfolio_ownership or {}).get(portfolio_name, {})
+                text += "Current Holdings:\n"
+                for allocation in summary.final_allocations:
+                    symbol = allocation.symbol.upper()
+                    ownership = ownership_data.get(symbol, {})
+                    avg_price = ownership.get('avg_price', 0.0)
+                    cost_basis = ownership.get('total_cost', 0.0)
+                    
+                    # If we don't have ownership data, use current price as estimate
+                    if avg_price == 0.0 and allocation.current_price > 0:
+                        avg_price = allocation.current_price
+                        cost_basis = allocation.market_value
+                    
+                    gain_loss = allocation.market_value - cost_basis
+                    gain_pct = (gain_loss / cost_basis * 100) if cost_basis > 0 else 0.0
+                    gain_sign = "+" if gain_loss >= 0 else ""
+                    
+                    text += f"  - {allocation.symbol}: {allocation.quantity:.2f} shares\n"
+                    text += f"    Purchase Price: ${avg_price:.2f} | Current Price: ${allocation.current_price:.2f}\n"
+                    text += f"    Cost Basis: ${cost_basis:.2f} | Market Value: ${allocation.market_value:.2f}\n"
+                    text += f"    Gain/Loss: {gain_sign}${gain_loss:.2f} ({gain_sign}{gain_pct:.2f}%)\n"
                 text += "\n"
             
             text += f"Portfolio Value: ${summary.portfolio_value:,.2f}\n"

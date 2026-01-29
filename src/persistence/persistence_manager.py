@@ -202,6 +202,36 @@ class PersistenceManager:
         
         return portfolio_quantity / total_quantity
     
+    def get_portfolio_ownership_records(self, portfolio_name: str) -> Dict[str, Dict[str, float]]:
+        """
+        Get ownership records with purchase prices for a portfolio.
+        
+        Returns:
+            Dict mapping symbol to dict with 'quantity', 'total_cost', and 'avg_price'
+        """
+        ownership_ref = self.db.collection('ownership')
+        if FieldFilter:
+            docs = ownership_ref.where(filter=FieldFilter('portfolio_name', '==', portfolio_name)).stream()
+        else:
+            docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
+        
+        records = {}
+        for doc in docs:
+            data = doc.to_dict()
+            symbol = data.get('symbol', '').upper()
+            quantity = data.get('quantity', 0.0)
+            total_cost = data.get('total_cost', 0.0)
+            
+            if quantity > 0 and symbol:
+                avg_price = total_cost / quantity if quantity > 0 else 0.0
+                records[symbol] = {
+                    'quantity': quantity,
+                    'total_cost': total_cost,
+                    'avg_price': avg_price
+                }
+        
+        return records
+    
     def get_all_portfolios_owning_symbol(self, symbol: str) -> TypingList[str]:
         """Get list of portfolio names that own a symbol."""
         symbol = symbol.upper()

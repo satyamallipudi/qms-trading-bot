@@ -25,22 +25,15 @@ class SendGridNotifier(EmailNotifier):
         self.client = SendGridAPIClient(api_key)
         self.from_email = from_email
     
-    def send_trade_summary(
+    def _send_email(
         self,
         recipient: str,
-        trade_summary,
-        leaderboard_symbols: Optional[List[str]] = None,
-        portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
+        subject: str,
+        text_content: str,
+        html_content: str,
     ) -> bool:
-        """Send trade summary email via SendGrid."""
+        """Send email via SendGrid."""
         try:
-            html_content = self._format_trade_summary_html(trade_summary, leaderboard_symbols, portfolio_leaderboards)
-            text_content = self._format_trade_summary_text(trade_summary, leaderboard_symbols, portfolio_leaderboards)
-            
-            subject = "Portfolio Rebalancing Summary"
-            if isinstance(trade_summary, MultiPortfolioSummary):
-                subject = "Multi-Portfolio Rebalancing Summary"
-            
             message = Mail(
                 from_email=self.from_email,
                 to_emails=recipient,
