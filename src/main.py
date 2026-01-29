@@ -320,6 +320,9 @@ class TradingBot:
                 return multi_summary
             else:
                 # Single portfolio - return single summary
+                if not portfolio_summaries:
+                    raise ValueError("No portfolio summaries generated. All portfolios may have failed during rebalancing.")
+                
                 summary = list(portfolio_summaries.values())[0]
                 
                 # Send email notification if enabled (only in real execution mode)

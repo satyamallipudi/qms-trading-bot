@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from ..broker import Broker
 from ..broker.models import Allocation, TradeSummary
 from ..leaderboard import LeaderboardClient
@@ -146,6 +146,7 @@ class Rebalancer:
             current_week_symbols_upper,
             previous_week_symbols_upper,
             external_sale_proceeds=external_sale_proceeds,
+            external_sales_by_symbol=external_sales_by_symbol,
             dry_run=dry_run
         )
     
@@ -246,6 +247,7 @@ class Rebalancer:
         current_week_symbols: List[str],
         previous_week_symbols: List[str],
         external_sale_proceeds: float = 0.0,
+        external_sales_by_symbol: Optional[Dict[str, Any]] = None,
         dry_run: bool = False,
     ) -> TradeSummary:
         """
@@ -290,11 +292,12 @@ class Rebalancer:
                 symbols_to_buy = symbols_to_buy | manually_held_in_top5
             
             # Find symbols in top 5 that had external sales (buy back using those proceeds)
-            symbols_with_external_sales = set(external_sales_by_symbol.keys())
-            symbols_to_buyback = (current_week_set & current_symbols) & symbols_with_external_sales
-            if symbols_to_buyback:
-                logger.info(f"[{self.portfolio_name}] Found stocks in top 5 with external sales: {symbols_to_buyback}. Will buy back using external sale proceeds.")
-                symbols_to_buy = symbols_to_buy | symbols_to_buyback
+            if external_sales_by_symbol:
+                symbols_with_external_sales = set(external_sales_by_symbol.keys())
+                symbols_to_buyback = (current_week_set & current_symbols) & symbols_with_external_sales
+                if symbols_to_buyback:
+                    logger.info(f"[{self.portfolio_name}] Found stocks in top 5 with external sales: {symbols_to_buyback}. Will buy back using external sale proceeds.")
+                    symbols_to_buy = symbols_to_buy | symbols_to_buyback
         
         sells = []
         buys = []
@@ -413,7 +416,7 @@ class Rebalancer:
                     if self.persistence_manager and symbol in current_symbols:
                         owned_symbols = self.persistence_manager.get_owned_symbols(self.portfolio_name)
                         is_manually_held = symbol not in owned_symbols
-                        is_buyback = symbol in external_sales_by_symbol
+                        is_buyback = external_sales_by_symbol and symbol in external_sales_by_symbol
                     
                     if dry_run:
                         buys.append({
@@ -421,9 +424,10 @@ class Rebalancer:
                             "quantity": 0,  # Will be estimated
                             "cost": allocation_per_stock,
                         })
-                        if is_buyback:
+                        if is_buyback and external_sales_by_symbol:
                             external_sale = external_sales_by_symbol.get(symbol)
-                            logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
+                            if external_sale:
+                                logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
                         elif is_manually_held:
                             logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
                         else:
@@ -437,9 +441,10 @@ class Rebalancer:
                                     "quantity": 0,  # Will be updated
                                     "cost": allocation_per_stock,
                                 })
-                                if is_buyback:
+                                if is_buyback and external_sales_by_symbol:
                                     external_sale = external_sales_by_symbol.get(symbol)
-                                    logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
+                                    if external_sale:
+                                        logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
                                 elif is_manually_held:
                                     logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
                                 else:
