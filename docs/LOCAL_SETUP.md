@@ -165,6 +165,9 @@ FIREBASE_CREDENTIALS_JSON={"type":"service_account","project_id":"...","private_
 
 #### Multiple Portfolio Configuration (Optional)
 
+**Default Behavior:**
+If no portfolio configuration is provided, the bot **defaults to trading SP400** (S&P 400 MidCap) with the `INITIAL_CAPITAL` amount.
+
 **Method 1: Environment Variables**
 ```bash
 TRADE_INDICES=SP400,SP500,SP600  # Comma-separated list of index names
@@ -177,6 +180,10 @@ INITIAL_CAPITAL_SP600=30000
 ```bash
 PORTFOLIO_CONFIG='[{"portfolio_name":"SP400","index_id":"13","initial_capital":50000,"enabled":true}]'
 ```
+
+**Note:** To explicitly configure a single SP400 portfolio, you can either:
+- Leave `TRADE_INDICES` unset (defaults to SP400)
+- Set `TRADE_INDICES=SP400`
 
 #### Security Configuration
 
@@ -275,12 +282,15 @@ PERSISTENCE_ENABLED=true  # Optional - auto-enables if credentials are set
 
 ### Multiple Portfolio Trading
 
-**⚠️ Important:** Persistence **must** be enabled when using multiple portfolios.
+**Default Behavior:**
+If no portfolio configuration is provided, the bot **defaults to trading SP400** (S&P 400 MidCap) with the `INITIAL_CAPITAL` amount. You can start using the bot immediately without any portfolio configuration.
+
+**⚠️ Important:** Persistence **must** be enabled when using multiple portfolios. The bot will raise an error if multiple portfolios are configured without persistence.
 
 See the [Complete Environment Variables Reference](#complete-environment-variables-reference) above for all multiple portfolio variables.
 
 **Available Indices:**
-- **SP400** (indexId: 13) - S&P 400 MidCap
+- **SP400** (indexId: 13) - S&P 400 MidCap (default)
 - **SP500** (indexId: 9) - S&P 500 LargeCap
 - **SP600** (indexId: 12) - S&P 600 SmallCap
 - **NDX** (indexId: 8) - NASDAQ-100

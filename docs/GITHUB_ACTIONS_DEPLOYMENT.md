@@ -94,8 +94,12 @@ GitHub Actions can trigger your bot on a schedule (e.g., weekly) using the **ext
 
 **Multiple Portfolio Configuration (Optional):**
 
+**Default Behavior:**
+If no portfolio configuration is provided, the bot **defaults to trading SP400** (S&P 400 MidCap) with the `INITIAL_CAPITAL` amount.
+
 **Method 1: Environment Variables (📝 Variables):**
 - `TRADE_INDICES` - Comma-separated list (e.g., `SP400,SP500,SP600`)
+  - If not set, defaults to `SP400`
 - `INITIAL_CAPITAL_SP400` - Capital for SP400 portfolio
 - `INITIAL_CAPITAL_SP500` - Capital for SP500 portfolio
 - `INITIAL_CAPITAL_SP600` - Capital for SP600 portfolio
@@ -103,6 +107,10 @@ GitHub Actions can trigger your bot on a schedule (e.g., weekly) using the **ext
 
 **Method 2: JSON Configuration (📝 Variable):**
 - `PORTFOLIO_CONFIG` - JSON string: `[{"portfolio_name":"SP400","index_id":"13","initial_capital":50000,"enabled":true}]`
+
+**Note:** To explicitly configure a single SP400 portfolio, you can either:
+- Leave `TRADE_INDICES` unset (defaults to SP400)
+- Set `TRADE_INDICES=SP400`
 
 **Security Configuration (📝 Variable):**
 - `MASK_FINANCIAL_AMOUNTS` - Set to `true` or `false` (default: `true`)

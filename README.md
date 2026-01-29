@@ -184,8 +184,11 @@ Enable Firebase Firestore to track bot trades and detect external sales:
 
 The bot supports trading multiple portfolios simultaneously, each tracking different leaderboard indices independently.
 
+**Default Behavior:**
+If no portfolio configuration is provided, the bot **defaults to trading SP400** (S&P 400 MidCap) with the `INITIAL_CAPITAL` amount. This means you can start using the bot immediately without any portfolio configuration - it will automatically trade SP400.
+
 **Available Indices:**
-- **SP400** (indexId: 13) - S&P 400 MidCap
+- **SP400** (indexId: 13) - S&P 400 MidCap (default)
 - **SP500** (indexId: 9) - S&P 500 LargeCap
 - **SP600** (indexId: 12) - S&P 600 SmallCap
 - **NDX** (indexId: 8) - NASDAQ-100

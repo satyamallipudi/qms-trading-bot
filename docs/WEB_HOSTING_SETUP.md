@@ -160,9 +160,12 @@ FIREBASE_CREDENTIALS_JSON='{"type":"service_account","project_id":"...","private
 
 #### Multiple Portfolio Configuration (Optional)
 
+**Default Behavior:**
+If no portfolio configuration is provided, the bot **defaults to trading SP400** (S&P 400 MidCap) with the `INITIAL_CAPITAL` amount.
+
 **Method 1: Environment Variables:**
 ```bash
-TRADE_INDICES=SP400,SP500,SP600
+TRADE_INDICES=SP400,SP500,SP600  # If not set, defaults to SP400
 INITIAL_CAPITAL_SP400=50000
 INITIAL_CAPITAL_SP500=100000
 INITIAL_CAPITAL_SP600=30000
@@ -172,6 +175,10 @@ INITIAL_CAPITAL_SP600=30000
 ```bash
 PORTFOLIO_CONFIG='[{"portfolio_name":"SP400","index_id":"13","initial_capital":50000,"enabled":true}]'
 ```
+
+**Note:** To explicitly configure a single SP400 portfolio, you can either:
+- Leave `TRADE_INDICES` unset (defaults to SP400)
+- Set `TRADE_INDICES=SP400`
 
 #### Security Configuration
 
