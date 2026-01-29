@@ -22,6 +22,8 @@
 - `SMTP_USERNAME` - Email username (if sensitive)
 - `EMAIL_RECIPIENT` - Email address (privacy)
 - `SMTP_FROM_EMAIL` - From email (if sensitive)
+- `FIREBASE_PROJECT_ID` - Firebase project ID
+- `FIREBASE_CREDENTIALS_JSON` - Entire Firebase service account JSON file content
 
 ### Use **Variables** for:
 - `BROKER_TYPE` - `alpaca`, `robinhood`, or `webull`
@@ -74,6 +76,13 @@
 - [ ] `SMTP_HOST` (set to `smtp.gmail.com`)
 - [ ] `SMTP_PORT` (set to `587`)
 
+### Optional Persistence Secrets 🔒
+- [ ] `FIREBASE_PROJECT_ID` - Your Firebase project ID
+- [ ] `FIREBASE_CREDENTIALS_JSON` - Entire Firebase service account JSON content
+
+### Optional Persistence Variables 📝
+- [ ] `PERSISTENCE_ENABLED` (set to `true` or `false`, auto-enables if credentials are set)
+
 ## Common Issues
 
 ### ❌ "Variable is empty" error
@@ -102,7 +111,21 @@
 ## Current Workflow Configuration
 
 The workflow file (`.github/workflows/trading-bot.yml`) is configured to use:
-- **Variables** for: `BROKER_TYPE`, `ALPACA_BASE_URL`, `INITIAL_CAPITAL`, `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`
-- **Secrets** for: All API keys, tokens, passwords, and email addresses
+- **Variables** for: `BROKER_TYPE`, `ALPACA_BASE_URL`, `INITIAL_CAPITAL`, `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `PERSISTENCE_ENABLED`
+- **Secrets** for: All API keys, tokens, passwords, email addresses, and Firebase credentials
 
 Make sure you add each value to the correct type!
+
+## Firebase Persistence Setup
+
+For Firebase persistence, you need:
+
+1. **Create Firebase project** and Firestore database (see README)
+2. **Download service account JSON** from Firebase Console
+3. **Add as secrets:**
+   - `FIREBASE_PROJECT_ID` = Your project ID (e.g., `qmsf-e541d`)
+   - `FIREBASE_CREDENTIALS_JSON` = Entire JSON file content (copy/paste all content)
+4. **Add as variable (optional):**
+   - `PERSISTENCE_ENABLED` = `true` (or leave unset - auto-enables if credentials are present)
+
+**⚠️ Important:** Never commit the Firebase JSON file to git. Always use `FIREBASE_CREDENTIALS_JSON` secret for GitHub Actions.

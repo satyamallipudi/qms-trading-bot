@@ -47,7 +47,15 @@ Get your QMS Trading Bot running on GitHub Actions in 5 minutes!
    
    Name: SMTP_FROM_EMAIL (optional)
    Value: your_gmail@gmail.com
+   
+   Name: FIREBASE_PROJECT_ID (optional - for persistence)
+   Value: your-firebase-project-id
+   
+   Name: FIREBASE_CREDENTIALS_JSON (optional - for persistence)
+   Value: {"type":"service_account","project_id":"...","private_key":"..."}
    ```
+   
+   > 💡 **For FIREBASE_CREDENTIALS_JSON:** Copy the entire content of your Firebase service account JSON file. GitHub handles multi-line secrets automatically.
 
    **Add as VARIABLES (Settings → Variables tab):**
    ```
@@ -74,9 +82,13 @@ Get your QMS Trading Bot running on GitHub Actions in 5 minutes!
    
    Name: SMTP_PORT (optional)
    Value: 587
+   
+   Name: PERSISTENCE_ENABLED (optional - for Firebase persistence)
+   Value: true
    ```
 
    > 💡 **Tip:** See [Secrets vs Variables Guide](GITHUB_SECRETS_VS_VARIABLES.md) for details
+   > 💡 **Persistence:** See [Persistence Configuration](../README.md#persistence-configuration-optional) in README for Firebase setup instructions
    > 💡 **Tip:** Copy each name exactly as shown (case-sensitive!)
 
 ### Step 2: Test the Workflow Manually

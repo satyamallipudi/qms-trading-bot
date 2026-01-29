@@ -1,6 +1,7 @@
 """Portfolio rebalancing logic."""
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from ..broker import Broker
 from ..broker.models import Allocation, TradeSummary
@@ -19,6 +20,7 @@ class Rebalancer:
         leaderboard_client: LeaderboardClient,
         initial_capital: float,
         email_notifier: Optional[EmailNotifier] = None,
+        persistence_manager: Optional[object] = None,  # PersistenceManager type
     ):
         """
         Initialize rebalancer.
@@ -28,11 +30,13 @@ class Rebalancer:
             leaderboard_client: Leaderboard API client
             initial_capital: Initial capital for portfolio allocation
             email_notifier: Optional email notifier
+            persistence_manager: Optional persistence manager for trade tracking
         """
         self.broker = broker
         self.leaderboard_client = leaderboard_client
         self.initial_capital = initial_capital
         self.email_notifier = email_notifier
+        self.persistence_manager = persistence_manager
     
     def rebalance(self, dry_run: bool = False) -> TradeSummary:
         """
@@ -70,6 +74,39 @@ class Rebalancer:
             logger.error(f"Error getting current allocation: {e}")
             raise
         
+        # Reconcile with broker trade history if persistence is enabled
+        if self.persistence_manager:
+            try:
+                # Get trade history from broker (last 7 days)
+                broker_trades = self.broker.get_trade_history(since_days=7)
+                if broker_trades:
+                    logger.info(f"Reconciling {len(broker_trades)} broker trades with Firestore...")
+                    reconciliation_result = self.persistence_manager.reconcile_with_broker_history(broker_trades)
+                    logger.info(f"Reconciliation complete: {reconciliation_result['updated']} updated, "
+                              f"{reconciliation_result['missing']} missing, "
+                              f"{reconciliation_result['unfilled']} unfilled")
+            except Exception as e:
+                logger.warning(f"Error reconciling trade history: {e}")
+                # Continue without reconciliation if there's an error
+        
+        # Detect external sales if persistence is enabled
+        external_sale_proceeds = 0.0
+        external_sales_by_symbol = {}  # Track external sales per symbol
+        if self.persistence_manager:
+            try:
+                logger.info("Checking for external sales...")
+                external_sales = self.persistence_manager.detect_external_sales(current_allocations)
+                if external_sales:
+                    logger.info(f"Detected {len(external_sales)} external sale(s)")
+                    for sale in external_sales:
+                        logger.info(f"  - {sale.symbol}: {sale.quantity} shares, ~${sale.estimated_proceeds:.2f}")
+                        external_sales_by_symbol[sale.symbol.upper()] = sale
+                    external_sale_proceeds = self.persistence_manager.get_unused_external_sale_proceeds()
+                    logger.info(f"Total unused external sale proceeds: ${external_sale_proceeds:.2f}")
+            except Exception as e:
+                logger.warning(f"Error detecting external sales: {e}")
+                # Continue without persistence if there's an error
+        
         # Normalize symbols to uppercase
         current_week_symbols_upper = [s.upper() for s in current_week_symbols]
         previous_week_symbols_upper = [s.upper() for s in previous_week_symbols]
@@ -87,9 +124,12 @@ class Rebalancer:
             raise
         
         # Case 1: No stocks from previous week's LB exist and 10k cash balance exists
-        if not positions_from_prev_week and cash_balance >= 10000.0:
-            logger.info("No stocks from previous week's LB exist and cash balance >= $10k. Entering trades for top 5 stocks using initial_capital.")
-            return self._initial_allocation(current_week_symbols_upper, self.initial_capital, dry_run=dry_run)
+        # If persistence is enabled, also check if we have external sale proceeds
+        available_capital = cash_balance + external_sale_proceeds
+        if not positions_from_prev_week and available_capital >= 10000.0:
+            capital_to_use = self.initial_capital + external_sale_proceeds
+            logger.info(f"No stocks from previous week's LB exist and available capital >= $10k. Entering trades for top 5 stocks using ${capital_to_use:.2f} (initial_capital + external sale proceeds).")
+            return self._initial_allocation(current_week_symbols_upper, capital_to_use, dry_run=dry_run)
         
         # Case 2: Compare top 5 stocks between LB-1 and LB
         # Sell stocks that were in last week's top 5 but aren't in this week's top 5
@@ -99,6 +139,7 @@ class Rebalancer:
             current_allocations,
             current_week_symbols_upper,
             previous_week_symbols_upper,
+            external_sale_proceeds=external_sale_proceeds,
             dry_run=dry_run
         )
     
@@ -147,6 +188,29 @@ class Rebalancer:
                             "cost": allocation_per_stock,
                         })
                         logger.info(f"Bought ${allocation_per_stock} of {symbol}")
+                        
+                        # Record trade in persistence
+                        if self.persistence_manager:
+                            from ..persistence.models import TradeRecord
+                            # Get price from updated allocations
+                            try:
+                                updated_allocations = self.broker.get_current_allocation()
+                                current_price = next(
+                                    (alloc.current_price for alloc in updated_allocations if alloc.symbol.upper() == symbol.upper()),
+                                    allocation_per_stock
+                                )
+                            except:
+                                current_price = allocation_per_stock
+                            
+                            trade = TradeRecord(
+                                symbol=symbol,
+                                action="BUY",
+                                quantity=0,  # Will be updated below
+                                price=current_price,
+                                total=allocation_per_stock,
+                                timestamp=datetime.now(),
+                            )
+                            self.persistence_manager.record_trade(trade)
                     else:
                         logger.warning(f"Failed to buy {symbol}")
                 except Exception as e:
@@ -160,6 +224,8 @@ class Rebalancer:
                 for alloc in final_allocations:
                     if alloc.symbol.upper() == buy["symbol"].upper():
                         buy["quantity"] = alloc.quantity
+                        # Update persistence trade record quantity if needed
+                        # (Ownership is already updated in record_trade, so this is mainly for logging)
                         break
         except Exception as e:
             logger.error(f"Error getting final allocations: {e}")
@@ -172,6 +238,7 @@ class Rebalancer:
         current_allocations: List[Allocation],
         current_week_symbols: List[str],
         previous_week_symbols: List[str],
+        external_sale_proceeds: float = 0.0,
         dry_run: bool = False,
     ) -> TradeSummary:
         """
@@ -192,10 +259,35 @@ class Rebalancer:
         
         # Find symbols to sell: were in previous week's top 5 but not in current week's top 5
         # Only sell if we actually hold them
+        # If persistence is enabled, only sell stocks we own according to persistence
         symbols_to_sell = (previous_week_set - current_week_set) & current_symbols
+        
+        # Filter by persistence ownership if enabled
+        if self.persistence_manager:
+            owned_symbols = self.persistence_manager.get_owned_symbols()
+            symbols_to_sell = symbols_to_sell & owned_symbols
+            logger.info(f"Persistence enabled: Only selling from owned symbols: {owned_symbols}")
         
         # Find symbols to buy: in current week's top 5 but not currently held
         symbols_to_buy = current_week_set - current_symbols
+        
+        # If persistence is enabled, also buy:
+        # 1. Symbols that are held but NOT purchased by bot (manually purchased stocks that enter top 5)
+        # 2. Symbols that had external sales and are still in top 5 (buy back using external sale proceeds)
+        if self.persistence_manager:
+            owned_symbols = self.persistence_manager.get_owned_symbols()
+            # Find symbols in top 5 that are held but not owned by bot
+            manually_held_in_top5 = (current_week_set & current_symbols) - owned_symbols
+            if manually_held_in_top5:
+                logger.info(f"Found manually purchased stocks in top 5: {manually_held_in_top5}. Will buy to bring to target allocation.")
+                symbols_to_buy = symbols_to_buy | manually_held_in_top5
+            
+            # Find symbols in top 5 that had external sales (buy back using those proceeds)
+            symbols_with_external_sales = set(external_sales_by_symbol.keys())
+            symbols_to_buyback = (current_week_set & current_symbols) & symbols_with_external_sales
+            if symbols_to_buyback:
+                logger.info(f"Found stocks in top 5 with external sales: {symbols_to_buyback}. Will buy back using external sale proceeds.")
+                symbols_to_buy = symbols_to_buy | symbols_to_buyback
         
         sells = []
         buys = []
@@ -215,8 +307,23 @@ class Rebalancer:
                     logger.info(f"[DRY-RUN] Would sell {allocation.quantity} shares of {symbol} for ${allocation.market_value} (dropped out of top 5)")
                 else:
                     try:
+                        # Check persistence ownership if enabled
+                        if self.persistence_manager:
+                            if not self.persistence_manager.can_sell(symbol, allocation.quantity):
+                                logger.warning(f"Cannot sell {symbol}: Not owned according to persistence (owned: {self.persistence_manager.get_ownership_quantity(symbol)})")
+                                continue
+                        
                         success = self.broker.sell(symbol, allocation.quantity)
                         if success:
+                            # Try to get order ID if broker supports it
+                            order_id = None
+                            try:
+                                # Some brokers return order ID from sell() - check if available
+                                if hasattr(self.broker, '_last_order_id'):
+                                    order_id = getattr(self.broker, '_last_order_id', None)
+                            except:
+                                pass
+                            
                             sells.append({
                                 "symbol": symbol,
                                 "quantity": allocation.quantity,
@@ -224,44 +331,83 @@ class Rebalancer:
                             })
                             total_proceeds += allocation.market_value
                             logger.info(f"Sold {allocation.quantity} shares of {symbol} for ${allocation.market_value} (dropped out of top 5)")
+                            
+                            # Record trade in persistence
+                            if self.persistence_manager:
+                                from ..persistence.models import TradeRecord
+                                trade = TradeRecord(
+                                    symbol=symbol,
+                                    action="SELL",
+                                    quantity=allocation.quantity,
+                                    price=allocation.current_price,
+                                    total=allocation.market_value,
+                                    timestamp=datetime.now(),
+                                    trade_id=order_id,
+                                )
+                                self.persistence_manager.record_trade(trade)
                         else:
                             logger.warning(f"Failed to sell {symbol}")
                     except Exception as e:
                         logger.error(f"Error selling {symbol}: {e}")
         
-        # Use only proceeds from sales to buy new stocks
+        # Use proceeds from sales + external sale proceeds to buy new stocks
         # Get current cash balance for logging purposes only
         try:
             current_cash = self.broker.get_account_cash()
             if dry_run:
                 logger.info(f"Current cash balance: ${current_cash}")
                 logger.info(f"Proceeds from sales: ${total_proceeds}")
+                if external_sale_proceeds > 0:
+                    logger.info(f"External sale proceeds: ${external_sale_proceeds}")
             else:
                 logger.info(f"Available cash: ${current_cash}")
         except Exception as e:
             logger.error(f"Error getting account cash: {e}")
         
-        # Buy new positions that entered top 5 (equal weight) using only proceeds from sales
+        # Buy new positions that entered top 5 (equal weight) using proceeds from sales + external sales
+        total_available = total_proceeds + external_sale_proceeds
         if symbols_to_buy:
-            if total_proceeds == 0:
-                logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds from sales. Skipping purchases.")
-            else:
-                # Only use proceeds from sales, not the entire cash balance
-                # Round to 2 decimal places (Alpaca requires notional values to be limited to 2 decimal places)
-                allocation_per_stock = round(total_proceeds / len(symbols_to_buy), 2)
-                if dry_run:
-                    logger.info(f"[DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using only proceeds from sales: ${total_proceeds})")
+            if total_available == 0:
+                # Check if any are manually held stocks that need bot purchase
+                if self.persistence_manager:
+                    manually_held = symbols_to_buy & (current_symbols - self.persistence_manager.get_owned_symbols())
+                    if manually_held:
+                        logger.warning(f"Manually purchased stocks in top 5: {manually_held}, but no proceeds from sales available. Cannot buy to bring to target allocation.")
+                    else:
+                        logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds available. Skipping purchases.")
                 else:
-                    logger.info(f"Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using only proceeds from sales: ${total_proceeds})")
+                    logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds available. Skipping purchases.")
+            else:
+                # Use proceeds from sales + external sale proceeds
+                # Round to 2 decimal places (Alpaca requires notional values to be limited to 2 decimal places)
+                allocation_per_stock = round(total_available / len(symbols_to_buy), 2)
+                if dry_run:
+                    logger.info(f"[DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using proceeds: ${total_available:.2f})")
+                else:
+                    logger.info(f"Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using proceeds: ${total_available:.2f})")
                 
                 for symbol in symbols_to_buy:
+                    # Check if this is a manually held stock being bought by bot
+                    is_manually_held = False
+                    is_buyback = False
+                    if self.persistence_manager and symbol in current_symbols:
+                        owned_symbols = self.persistence_manager.get_owned_symbols()
+                        is_manually_held = symbol not in owned_symbols
+                        is_buyback = symbol in external_sales_by_symbol
+                    
                     if dry_run:
                         buys.append({
                             "symbol": symbol,
                             "quantity": 0,  # Will be estimated
                             "cost": allocation_per_stock,
                         })
-                        logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (entered top 5)")
+                        if is_buyback:
+                            external_sale = external_sales_by_symbol.get(symbol)
+                            logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
+                        elif is_manually_held:
+                            logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
+                        else:
+                            logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (entered top 5)")
                     else:
                         try:
                             success = self.broker.buy(symbol, allocation_per_stock)
@@ -271,7 +417,42 @@ class Rebalancer:
                                     "quantity": 0,  # Will be updated
                                     "cost": allocation_per_stock,
                                 })
-                                logger.info(f"Bought ${allocation_per_stock} of {symbol} (entered top 5)")
+                                if is_buyback:
+                                    external_sale = external_sales_by_symbol.get(symbol)
+                                    logger.info(f"Bought ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
+                                elif is_manually_held:
+                                    logger.info(f"Bought ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
+                                else:
+                                    logger.info(f"Bought ${allocation_per_stock} of {symbol} (entered top 5)")
+                                
+                                # Record trade in persistence
+                                if self.persistence_manager:
+                                    from ..persistence.models import TradeRecord
+                                    # Get current price for the trade record
+                                    current_price = next(
+                                        (alloc.current_price for alloc in final_allocations if alloc.symbol.upper() == symbol.upper()),
+                                        0.0
+                                    )
+                                    if current_price == 0.0:
+                                        # Try to get from current allocations if final_allocations not updated yet
+                                        try:
+                                            updated_allocations = self.broker.get_current_allocation()
+                                            current_price = next(
+                                                (alloc.current_price for alloc in updated_allocations if alloc.symbol.upper() == symbol.upper()),
+                                                allocation_per_stock  # Fallback to notional
+                                            )
+                                        except:
+                                            current_price = allocation_per_stock
+                                    
+                                    trade = TradeRecord(
+                                        symbol=symbol,
+                                        action="BUY",
+                                        quantity=0,  # Will be updated below
+                                        price=current_price,
+                                        total=allocation_per_stock,
+                                        timestamp=datetime.now(),
+                                    )
+                                    self.persistence_manager.record_trade(trade)
                             else:
                                 logger.warning(f"Failed to buy {symbol}")
                         except Exception as e:
@@ -286,10 +467,23 @@ class Rebalancer:
                     for alloc in final_allocations:
                         if alloc.symbol.upper() == buy["symbol"].upper():
                             buy["quantity"] = alloc.quantity
+                            # Update persistence trade record with actual quantity
+                            if self.persistence_manager:
+                                # Find the most recent BUY trade for this symbol and update quantity
+                                # Note: This is a simplification - in production you might want to track trade IDs
+                                pass  # Quantity update handled in record_trade via ownership update
                             break
         except Exception as e:
             logger.error(f"Error getting final allocations: {e}")
             final_allocations = []
+        
+        # Mark external sales as used if we used them for reinvestment
+        if not dry_run and self.persistence_manager and external_sale_proceeds > 0 and total_available > 0:
+            # Calculate how much external sale proceeds were used
+            external_portion = min(external_sale_proceeds, total_available)
+            if external_portion > 0:
+                self.persistence_manager.mark_external_sales_used(external_portion)
+                logger.info(f"Marked ${external_portion:.2f} of external sale proceeds as used for reinvestment")
         
         if not sells and not buys:
             if dry_run:

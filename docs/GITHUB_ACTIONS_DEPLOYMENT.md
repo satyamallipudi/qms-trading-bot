@@ -54,6 +54,16 @@ GitHub Actions can trigger your bot on a schedule (e.g., weekly) using the **ext
 - `INITIAL_CAPITAL` - e.g., `10000.0`
 - `SCHEDULER_MODE` - Set to `external` (required for GitHub Actions)
 
+**Persistence Secrets (optional - for Firebase Firestore):**
+- `FIREBASE_PROJECT_ID` - Your Firebase project ID
+- `FIREBASE_CREDENTIALS_JSON` - **Entire content of Firebase service account JSON file** (store as secret)
+  - Download JSON from Firebase Console → Project Settings → Service Accounts
+  - Copy the entire file content (including all braces, quotes, etc.)
+  - Paste as a single-line secret (GitHub will handle multi-line secrets)
+- `PERSISTENCE_ENABLED` - Set to `true` (optional - auto-enables if credentials are set)
+
+**⚠️ Important:** Never commit the Firebase JSON file to git. Use `FIREBASE_CREDENTIALS_JSON` secret for GitHub Actions.
+
 ### Step 2: Create GitHub Actions Workflow
 
 Create the file `.github/workflows/trading-bot.yml`:

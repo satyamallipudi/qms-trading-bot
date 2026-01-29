@@ -71,6 +71,13 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM_EMAIL: ${{ secrets.SMTP_FROM_EMAIL }}
+          
+          # Persistence Configuration (optional)
+          # For GitHub Actions: use FIREBASE_CREDENTIALS_JSON (store entire JSON as secret)
+          # For local: use FIREBASE_CREDENTIALS_PATH
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          PERSISTENCE_ENABLED: ${{ vars.PERSISTENCE_ENABLED }}
         run: |
           # Run bot in one-shot mode (external scheduler)
           python -c "

@@ -8,6 +8,7 @@ Automated portfolio rebalancing bot that tracks a leaderboard and automatically 
 - **Multiple Broker Support**: Works with Alpaca, Robinhood, and Webull
 - **Flexible Scheduling**: Internal scheduler or external webhook triggers
 - **Email Notifications**: Get notified when trades complete (SMTP, SendGrid, or AWS SES)
+- **Trade Persistence**: Optional Firebase Firestore integration to track bot trades and detect external sales
 - **Docker Ready**: Containerized for easy deployment
 - **Cloud Deployable**: Works with AWS, GCP, and Azure
 
@@ -105,16 +106,105 @@ Set `EMAIL_ENABLED=true` and choose a provider:
 - `WEBHOOK_PORT=8080`
 - `WEBHOOK_SECRET=optional_secret_token`
 
+### Persistence Configuration (Optional)
+
+Enable Firebase Firestore to track bot trades and detect external sales:
+
+#### Step 1: Set up Firebase Project
+
+1. **Create Firebase Project:**
+   - Go to [Firebase Console](https://console.firebase.google.com/)
+   - Click "Add project" or select existing project
+   - Note your **Project ID** (shown in Project Settings)
+
+2. **Create Firestore Database:**
+   - In Firebase Console, click **"Firestore Database"** in the left sidebar
+   - Click **"Create database"**
+   - Choose **"Start in test mode"** (or production mode with your security rules)
+   - Select a location (e.g., `us-central1`)
+   - Click **"Enable"**
+
+3. **Get Service Account Credentials:**
+   - Go to **Project Settings** (gear icon) → **Service Accounts**
+   - Click **"Generate New Private Key"**
+   - Download the JSON file (e.g., `firebase-service-account.json`)
+
+#### Step 2: Verify Setup (Only for local Development)
+
+Run the verification script to verify Firebase connectivity:
+
+```bash
+python scripts/verify-firebase.py
+```
+
+This script will:
+- Verify Firebase credentials are valid
+- Test Firestore connection
+- Verify collections can be created
+- Test read/write operations
+
+#### Step 3: Configure Environment Variables
+
+**For Local Development:**
+
+Add to your `.env` file:
+```bash
+# Persistence Configuration
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_CREDENTIALS_PATH=/path/to/firebase-service-account.json
+PERSISTENCE_ENABLED=true  # Optional - auto-enables if credentials are set
+```
+
+**For GitHub Actions / CI/CD:**
+
+1. Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions**
+2. Add the following secrets:
+   - `FIREBASE_PROJECT_ID` = Your Firebase project ID (e.g., `qmsf-e541d`)
+   - `FIREBASE_CREDENTIALS_JSON` = **Entire content** of the Firebase service account JSON file
+     - Open the downloaded JSON file
+     - Copy **all** content (including all braces, quotes, newlines)
+     - Paste into the secret value (GitHub handles multi-line secrets)
+   - `PERSISTENCE_ENABLED` = `true` (optional - auto-enables if credentials are set)
+
+**⚠️ Security Note:** 
+- **Never commit** the Firebase JSON file to git
+- Use `FIREBASE_CREDENTIALS_PATH` for local development (file path)
+- Use `FIREBASE_CREDENTIALS_JSON` for CI/CD (JSON string from secret)
+- Add `firebase-service-account.json` to `.gitignore` if storing locally
+
+**Features:**
+- ✅ Tracks all bot trades (BUY/SELL) in Firestore
+- ✅ Maintains ownership records for each symbol
+- ✅ Prevents selling stocks not purchased by the bot
+- ✅ Detects external sales (stocks sold outside the bot)
+- ✅ Uses external sale proceeds for reinvestment
+- ✅ Falls back to current logic if persistence is disabled or unavailable
+
+**How External Sales Detection Works:**
+- Compares DB ownership records against broker positions
+- Compares broker transaction history with DB records
+- Automatically updates ownership when external sales are detected
+- Marks external sale proceeds as available for reinvestment
+
+📖 **Detailed Scenarios:** See [Persistence Scenarios Guide](docs/PERSISTENCE_SCENARIOS.md) for examples of:
+- First run behavior
+- Normal rebalancing
+- External sales (stock in/out of top 5)
+- Multiple stocks moving in/out
+- Manually purchased stocks entering top 5
+
 ## How It Works
 
 1. **Scheduler triggers** every Monday (or as configured)
 2. **Fetches leaderboard** top 5 stocks from your API
 3. **Checks current portfolio** allocation
-4. **Rebalances if needed**:
-   - If portfolio is empty: Divides initial capital into 5 equal parts and buys top 5
-   - If allocations don't match: Sells positions not in top 5, buys missing positions
+4. **Detects external sales** (if persistence enabled) and adds proceeds to available capital
+5. **Rebalances if needed**:
+   - If portfolio is empty: Divides initial capital (+ external sale proceeds) into 5 equal parts and buys top 5
+   - If allocations don't match: Sells positions not in top 5 (only bot-owned stocks if persistence enabled), buys missing positions using sale proceeds + external sale proceeds
    - If allocations match: Does nothing
-5. **Sends email notification** with trade summary (if enabled)
+6. **Records trades** in Firestore (if persistence enabled)
+7. **Sends email notification** with trade summary (if enabled)
 
 ## Deployment
 
@@ -250,6 +340,7 @@ This project uses the following third-party libraries:
 |---------|---------|---------|---------|
 | [sendgrid](https://github.com/sendgrid/sendgrid-python) | >=6.10.0 | MIT | SendGrid email provider |
 | [boto3](https://github.com/boto/boto3) | >=1.34.0 | Apache-2.0 | AWS SES email provider |
+| [firebase-admin](https://github.com/firebase/firebase-admin-python) | >=6.5.0 | Apache-2.0 | Firebase Firestore persistence |
 
 ### Development Dependencies
 

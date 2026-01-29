@@ -1,6 +1,7 @@
 """Alpaca broker implementation."""
 
 import logging
+from datetime import datetime, timedelta
 from typing import List
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
@@ -99,3 +100,104 @@ class AlpacaBroker(Broker):
         except Exception as e:
             logger.error(f"Error getting account cash: {e}")
             raise
+    
+    def get_trade_history(self, since_days: int = 7) -> List[dict]:
+        """Get trade history from Alpaca."""
+        try:
+            from alpaca.trading.enums import OrderStatus
+            
+            # Calculate start date
+            start_date = datetime.now() - timedelta(days=since_days)
+            
+            # Get all orders from the specified period
+            # Alpaca API accepts datetime object or date string
+            try:
+                orders = self.client.get_orders(
+                    status='all',  # Get all statuses, we'll filter filled ones
+                    limit=500,  # Adjust as needed
+                    after=start_date,  # Try datetime object first
+                )
+            except:
+                # Fallback to date string format
+                try:
+                    orders = self.client.get_orders(
+                        status='all',
+                        limit=500,
+                        after=start_date.date().isoformat(),
+                    )
+                except:
+                    # If date filtering fails, get all recent orders and filter manually
+                    orders = self.client.get_orders(status='all', limit=500)
+            
+            trades = []
+            for order in orders:
+                # Only include filled orders
+                if order.status != OrderStatus.FILLED:
+                    continue
+                
+                # Skip if no filled quantity
+                if not order.filled_qty or float(order.filled_qty) == 0:
+                    continue
+                
+                # Filter by date if we got all orders
+                order_date = order.filled_at if order.filled_at else order.submitted_at
+                if order_date:
+                    if isinstance(order_date, str):
+                        try:
+                            order_dt = datetime.fromisoformat(order_date.replace('Z', '+00:00'))
+                        except:
+                            continue
+                    elif isinstance(order_date, datetime):
+                        order_dt = order_date.replace(tzinfo=None) if order_date.tzinfo else order_date
+                    else:
+                        continue
+                    
+                    # Skip if order is before start_date
+                    if order_dt < start_date:
+                        continue
+                
+                # Determine action from order side
+                action = "BUY" if order.side == OrderSide.BUY else "SELL"
+                
+                # Get fill price (use average fill price if available, otherwise submitted price)
+                fill_price = float(order.filled_avg_price) if order.filled_avg_price else float(order.limit_price or order.submitted_price or 0)
+                if fill_price == 0:
+                    continue
+                
+                # Calculate total
+                quantity = float(order.filled_qty)
+                total = quantity * fill_price
+                
+                # Get timestamp (use filled_at if available, otherwise submitted_at)
+                timestamp = order.filled_at if order.filled_at else order.submitted_at
+                if timestamp:
+                    # Convert to datetime if it's a string
+                    if isinstance(timestamp, str):
+                        try:
+                            timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        except:
+                            timestamp = datetime.now()
+                    elif isinstance(timestamp, datetime):
+                        # Remove timezone if present
+                        if timestamp.tzinfo:
+                            timestamp = timestamp.replace(tzinfo=None)
+                    else:
+                        timestamp = datetime.now()
+                else:
+                    timestamp = datetime.now()
+                
+                trades.append({
+                    'symbol': order.symbol,
+                    'action': action,
+                    'quantity': quantity,
+                    'price': fill_price,
+                    'total': total,
+                    'timestamp': timestamp,
+                    'trade_id': str(order.id),
+                })
+            
+            logger.info(f"Retrieved {len(trades)} filled orders from Alpaca")
+            return trades
+        except Exception as e:
+            logger.warning(f"Error getting trade history from Alpaca: {e}")
+            return []

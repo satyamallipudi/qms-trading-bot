@@ -1,6 +1,7 @@
 """Robinhood broker implementation."""
 
 import logging
+from datetime import datetime, timedelta
 from typing import List, Optional
 import robin_stocks.robinhood as rh
 
@@ -112,3 +113,90 @@ class RobinhoodBroker(Broker):
         except Exception as e:
             logger.error(f"Error getting account cash: {e}")
             raise
+    
+    def get_trade_history(self, since_days: int = 7) -> List[dict]:
+        """Get trade history from Robinhood."""
+        try:
+            # Get all stock orders
+            orders = rh.get_all_stock_orders()
+            
+            if not orders:
+                return []
+            
+            # Calculate cutoff date
+            cutoff_date = datetime.now() - timedelta(days=since_days)
+            
+            trades = []
+            for order in orders:
+                # Only include filled orders
+                state = order.get("state", "").upper()
+                if state not in ["FILLED", "PARTIALLY_FILLED"]:
+                    continue
+                
+                # Get order details
+                symbol = order.get("symbol")
+                if not symbol:
+                    continue
+                
+                # Determine action from side
+                side = order.get("side", "").upper()
+                if side == "BUY":
+                    action = "BUY"
+                elif side == "SELL":
+                    action = "SELL"
+                else:
+                    continue
+                
+                # Get filled quantity
+                quantity = float(order.get("quantity", 0))
+                if quantity == 0:
+                    continue
+                
+                # Get average price (filled price)
+                average_price = order.get("average_price")
+                if not average_price:
+                    # Try to get from executions
+                    executions = order.get("executions", [])
+                    if executions:
+                        total_price = sum(float(e.get("price", 0)) * float(e.get("quantity", 0)) for e in executions)
+                        total_qty = sum(float(e.get("quantity", 0)) for e in executions)
+                        average_price = total_price / total_qty if total_qty > 0 else 0
+                    else:
+                        average_price = order.get("price", 0)
+                
+                fill_price = float(average_price) if average_price else 0.0
+                if fill_price == 0:
+                    continue
+                
+                # Calculate total
+                total = quantity * fill_price
+                
+                # Get timestamp
+                updated_at = order.get("updated_at") or order.get("created_at")
+                if updated_at:
+                    try:
+                        # Parse ISO format timestamp
+                        timestamp = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+                        # Check if within date range
+                        if timestamp.replace(tzinfo=None) < cutoff_date:
+                            continue
+                    except:
+                        timestamp = datetime.now()
+                else:
+                    timestamp = datetime.now()
+                
+                trades.append({
+                    'symbol': symbol,
+                    'action': action,
+                    'quantity': quantity,
+                    'price': fill_price,
+                    'total': total,
+                    'timestamp': timestamp,
+                    'trade_id': order.get("id"),
+                })
+            
+            logger.info(f"Retrieved {len(trades)} filled orders from Robinhood")
+            return trades
+        except Exception as e:
+            logger.warning(f"Error getting trade history from Robinhood: {e}")
+            return []

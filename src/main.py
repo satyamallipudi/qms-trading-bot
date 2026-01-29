@@ -77,12 +77,33 @@ class TradingBot:
         else:
             logger.info("Email notifications disabled")
         
+        # Initialize persistence manager if enabled
+        persistence_manager = None
+        if self.config.persistence.enabled:
+            try:
+                if not self.config.persistence.is_configured():
+                    logger.warning("Persistence enabled but credentials not configured. Disabling persistence.")
+                else:
+                    from .persistence import PersistenceManager
+                    persistence_manager = PersistenceManager(
+                        project_id=self.config.persistence.project_id,
+                        credentials_path=self.config.persistence.credentials_path,
+                        credentials_json=self.config.persistence.credentials_json,
+                    )
+                    logger.info("Initialized persistence manager (Firebase Firestore)")
+            except Exception as e:
+                logger.warning(f"Failed to initialize persistence manager: {e}. Continuing without persistence.")
+                persistence_manager = None
+        else:
+            logger.info("Persistence disabled")
+        
         # Initialize rebalancer
         self.rebalancer = Rebalancer(
             broker=self.broker,
             leaderboard_client=self.leaderboard_client,
             initial_capital=self.config.initial_capital,
             email_notifier=self.email_notifier,
+            persistence_manager=persistence_manager,
         )
         logger.info("Initialized rebalancer")
         
@@ -263,6 +284,7 @@ class TradingBot:
         logger.info(f"Broker: {self.config.broker.broker_type}")
         logger.info(f"Scheduler Mode: {self.config.scheduler.mode}")
         logger.info(f"Email: {'Enabled' if self.email_notifier else 'Disabled'}")
+        logger.info(f"Persistence: {'Enabled' if self.config.persistence.enabled and self.config.persistence.is_configured() else 'Disabled'}")
         logger.info("=" * 60)
         
         if self.config.scheduler.mode == "internal":

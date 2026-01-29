@@ -123,6 +123,19 @@ class SchedulerConfig(BaseModel):
         return v_lower
 
 
+class PersistenceConfig(BaseModel):
+    """Firebase Firestore persistence configuration."""
+
+    enabled: bool = Field(default=False, description="Enable persistence tracking")
+    project_id: Optional[str] = Field(default=None, description="Firebase project ID")
+    credentials_path: Optional[str] = Field(default=None, description="Path to Firebase service account JSON file")
+    credentials_json: Optional[str] = Field(default=None, description="Firebase service account JSON as string (alternative to credentials_path)")
+
+    def is_configured(self) -> bool:
+        """Check if Firebase credentials are configured."""
+        return bool(self.project_id and (self.credentials_path or self.credentials_json))
+
+
 class Config(BaseModel):
     """Main configuration class."""
 
@@ -141,6 +154,9 @@ class Config(BaseModel):
     
     # Scheduler configuration
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    
+    # Persistence configuration
+    persistence: PersistenceConfig = Field(default_factory=PersistenceConfig)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -191,6 +207,24 @@ class Config(BaseModel):
             webhook_secret=os.getenv("WEBHOOK_SECRET"),
         )
         
+        # Persistence configuration - auto-enable if credentials are present
+        persistence_enabled_env = os.getenv("PERSISTENCE_ENABLED", "").lower()
+        persistence_enabled = persistence_enabled_env == "true"
+        persistence_project_id = os.getenv("FIREBASE_PROJECT_ID")
+        persistence_credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+        persistence_credentials_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+        
+        # Auto-enable if credentials are configured (even if PERSISTENCE_ENABLED is not explicitly true)
+        if persistence_project_id and (persistence_credentials_path or persistence_credentials_json):
+            persistence_enabled = True
+        
+        persistence_config = PersistenceConfig(
+            enabled=persistence_enabled,
+            project_id=persistence_project_id,
+            credentials_path=persistence_credentials_path,
+            credentials_json=persistence_credentials_json,
+        )
+        
         # Handle INITIAL_CAPITAL with proper default for empty strings
         initial_capital_str = os.getenv("INITIAL_CAPITAL", "10000.0")
         initial_capital = float(initial_capital_str) if initial_capital_str and initial_capital_str.strip() else 10000.0
@@ -202,6 +236,7 @@ class Config(BaseModel):
             broker=broker_config,
             email=email_config,
             scheduler=scheduler_config,
+            persistence=persistence_config,
         )
         
         # Validate required fields

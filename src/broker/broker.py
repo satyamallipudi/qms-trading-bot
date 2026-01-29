@@ -55,3 +55,17 @@ class Broker(ABC):
             Available cash amount
         """
         pass
+    
+    def get_trade_history(self, since_days: int = 7) -> List[dict]:
+        """
+        Get trade history from broker (optional - for reconciliation).
+        
+        Args:
+            since_days: Number of days to look back for trades
+            
+        Returns:
+            List of trade dictionaries with keys: symbol, action, quantity, price, total, timestamp, trade_id
+            Returns empty list if not implemented by broker
+        """
+        # Default implementation - brokers can override
+        return []

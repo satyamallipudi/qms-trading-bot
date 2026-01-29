@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from datetime import datetime, timedelta
 from typing import List, Optional
 from webullsdkcore.client import ApiClient
 from webullsdkcore.common.region import Region
@@ -275,3 +276,102 @@ class WebullBroker(Broker):
         except Exception as e:
             logger.error(f"Error getting account cash: {e}")
             raise
+    
+    def get_trade_history(self, since_days: int = 7) -> List[dict]:
+        """Get trade history from Webull."""
+        try:
+            # Calculate start date (Unix timestamp in milliseconds)
+            start_date = datetime.now() - timedelta(days=since_days)
+            start_timestamp = int(start_date.timestamp() * 1000)
+            
+            # Get order history from Webull
+            # Note: Webull API may use different endpoints - adjust based on actual API
+            # Common endpoints: get_order_history, get_order_list, get_filled_orders
+            response = self.api.order.get_order_list(
+                account_id=self.account_id,
+                start_time=start_timestamp,
+                # Add other parameters as needed by Webull API
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"Error getting order history from Webull: {response.status_code}")
+                return []
+            
+            orders_data = response.json()
+            orders = orders_data.get("data", []) or orders_data.get("orders", []) or []
+            
+            trades = []
+            for order in orders:
+                # Only include filled/completed orders
+                status = order.get("status", "").upper()
+                if status not in ["FILLED", "PARTIALLY_FILLED", "EXECUTED"]:
+                    continue
+                
+                # Get symbol
+                symbol = order.get("symbol") or order.get("ticker")
+                if not symbol:
+                    continue
+                
+                # Determine action from order side
+                side = order.get("side", "").upper() or order.get("action", "").upper()
+                if side in ["BUY", "BUY_OPEN"]:
+                    action = "BUY"
+                elif side in ["SELL", "SELL_CLOSE"]:
+                    action = "SELL"
+                else:
+                    continue
+                
+                # Get filled quantity
+                quantity = float(order.get("filled_quantity", 0) or order.get("filled_qty", 0) or order.get("quantity", 0))
+                if quantity == 0:
+                    continue
+                
+                # Get fill price
+                fill_price = float(
+                    order.get("filled_price", 0) or 
+                    order.get("avg_fill_price", 0) or 
+                    order.get("price", 0) or 
+                    0
+                )
+                if fill_price == 0:
+                    continue
+                
+                # Calculate total
+                total = quantity * fill_price
+                
+                # Get timestamp
+                timestamp_str = order.get("filled_time") or order.get("executed_time") or order.get("create_time") or order.get("timestamp")
+                if timestamp_str:
+                    try:
+                        # Webull may return timestamp in milliseconds or ISO format
+                        if isinstance(timestamp_str, (int, float)):
+                            # Assume milliseconds
+                            timestamp = datetime.fromtimestamp(timestamp_str / 1000)
+                        else:
+                            # Try ISO format
+                            timestamp = datetime.fromisoformat(str(timestamp_str).replace('Z', '+00:00'))
+                    except:
+                        timestamp = datetime.now()
+                else:
+                    timestamp = datetime.now()
+                
+                # Check if within date range
+                if timestamp.replace(tzinfo=None) < start_date:
+                    continue
+                
+                trades.append({
+                    'symbol': symbol,
+                    'action': action,
+                    'quantity': quantity,
+                    'price': fill_price,
+                    'total': total,
+                    'timestamp': timestamp,
+                    'trade_id': str(order.get("order_id") or order.get("id") or ""),
+                })
+            
+            logger.info(f"Retrieved {len(trades)} filled orders from Webull")
+            return trades
+        except Exception as e:
+            logger.warning(f"Error getting trade history from Webull: {e}")
+            # Webull API endpoints may vary - return empty list if not available
+            return []
