@@ -9,9 +9,11 @@ from pathlib import Path
 try:
     import firebase_admin
     from firebase_admin import credentials, firestore
+    from google.cloud.firestore_v1.base_query import FieldFilter
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False
+    FieldFilter = None
 
 from .models import TradeRecord, OwnershipRecord, ExternalSaleRecord
 from src.broker.models import Allocation
@@ -138,7 +140,12 @@ class PersistenceManager:
     def get_owned_symbols(self, portfolio_name: str = "SP400") -> Set[str]:
         """Get set of symbols we own according to persistence for a specific portfolio."""
         ownership_ref = self.db.collection('ownership')
-        docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
+        # Use FieldFilter to avoid positional argument warning
+        if FieldFilter:
+            docs = ownership_ref.where(filter=FieldFilter('portfolio_name', '==', portfolio_name)).stream()
+        else:
+            # Fallback to positional arguments if FieldFilter not available
+            docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
         
         owned_symbols = set()
         for doc in docs:
@@ -170,7 +177,10 @@ class PersistenceManager:
         """Get total tracked ownership across all portfolios for a symbol."""
         symbol = symbol.upper()
         ownership_ref = self.db.collection('ownership')
-        docs = ownership_ref.where('symbol', '==', symbol).stream()
+        if FieldFilter:
+            docs = ownership_ref.where(filter=FieldFilter('symbol', '==', symbol)).stream()
+        else:
+            docs = ownership_ref.where('symbol', '==', symbol).stream()
         
         total_quantity = 0.0
         for doc in docs:
@@ -196,7 +206,10 @@ class PersistenceManager:
         """Get list of portfolio names that own a symbol."""
         symbol = symbol.upper()
         ownership_ref = self.db.collection('ownership')
-        docs = ownership_ref.where('symbol', '==', symbol).stream()
+        if FieldFilter:
+            docs = ownership_ref.where(filter=FieldFilter('symbol', '==', symbol)).stream()
+        else:
+            docs = ownership_ref.where('symbol', '==', symbol).stream()
         
         portfolios = []
         for doc in docs:
@@ -220,7 +233,10 @@ class PersistenceManager:
         # Get DB ownership for this portfolio
         db_ownership: Dict[str, float] = {}
         ownership_ref = self.db.collection('ownership')
-        docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
+        if FieldFilter:
+            docs = ownership_ref.where(filter=FieldFilter('portfolio_name', '==', portfolio_name)).stream()
+        else:
+            docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
         for doc in docs:
             data = doc.to_dict()
             symbol = data.get('symbol', '').upper()
@@ -340,7 +356,10 @@ class PersistenceManager:
     def get_unused_external_sale_proceeds(self, portfolio_name: str = "SP400") -> float:
         """Get total proceeds from external sales not yet used for reinvestment for a specific portfolio."""
         external_sales_ref = self.db.collection('external_sales')
-        docs = external_sales_ref.where('used_for_reinvestment', '==', False).where('portfolio_name', '==', portfolio_name).stream()
+        if FieldFilter:
+            docs = external_sales_ref.where(filter=FieldFilter('used_for_reinvestment', '==', False)).where(filter=FieldFilter('portfolio_name', '==', portfolio_name)).stream()
+        else:
+            docs = external_sales_ref.where('used_for_reinvestment', '==', False).where('portfolio_name', '==', portfolio_name).stream()
         
         total_proceeds = 0.0
         for doc in docs:
@@ -352,7 +371,10 @@ class PersistenceManager:
     def mark_external_sales_used(self, amount: float, portfolio_name: str = "SP400") -> None:
         """Mark external sales as used for reinvestment for a specific portfolio."""
         external_sales_ref = self.db.collection('external_sales')
-        docs = external_sales_ref.where('used_for_reinvestment', '==', False).where('portfolio_name', '==', portfolio_name).stream()
+        if FieldFilter:
+            docs = external_sales_ref.where(filter=FieldFilter('used_for_reinvestment', '==', False)).where(filter=FieldFilter('portfolio_name', '==', portfolio_name)).stream()
+        else:
+            docs = external_sales_ref.where('used_for_reinvestment', '==', False).where('portfolio_name', '==', portfolio_name).stream()
         
         remaining = amount
         for doc in docs:
@@ -405,7 +427,12 @@ class PersistenceManager:
         db_trades_by_id = {}
         # Note: reconcile_with_broker_history doesn't have portfolio_name parameter yet
         # For now, filter by portfolio_name if provided in broker_trades
-        for doc in trades_ref.where('timestamp', '>=', cutoff_date).stream():
+        if FieldFilter:
+            query = trades_ref.where(filter=FieldFilter('timestamp', '>=', cutoff_date))
+        else:
+            query = trades_ref.where('timestamp', '>=', cutoff_date)
+        
+        for doc in query.stream():
             data = doc.to_dict()
             trade_id = data.get('trade_id')
             symbol = data.get('symbol', '').upper()

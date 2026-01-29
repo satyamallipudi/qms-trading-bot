@@ -113,7 +113,6 @@ class AlpacaBroker(Broker):
             # Alpaca API accepts datetime object or date string
             try:
                 orders = self.client.get_orders(
-                    status='all',  # Get all statuses, we'll filter filled ones
                     limit=500,  # Adjust as needed
                     after=start_date,  # Try datetime object first
                 )
@@ -121,13 +120,12 @@ class AlpacaBroker(Broker):
                 # Fallback to date string format
                 try:
                     orders = self.client.get_orders(
-                        status='all',
                         limit=500,
                         after=start_date.date().isoformat(),
                     )
                 except:
                     # If date filtering fails, get all recent orders and filter manually
-                    orders = self.client.get_orders(status='all', limit=500)
+                    orders = self.client.get_orders(limit=500)
             
             trades = []
             for order in orders:
