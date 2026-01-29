@@ -1,12 +1,12 @@
 """AWS SES email notifier implementation."""
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Union
 import boto3
 from botocore.exceptions import ClientError
 
 from .email_notifier import EmailNotifier
-from ..broker.models import TradeSummary
+from ..broker.models import TradeSummary, MultiPortfolioSummary
 
 logger = logging.getLogger(__name__)
 
