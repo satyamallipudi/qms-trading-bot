@@ -176,6 +176,13 @@ INITIAL_CAPITAL_SP500=100000
 INITIAL_CAPITAL_SP600=30000
 ```
 
+**Initial Capital Behavior:**
+- If `INITIAL_CAPITAL_{INDEX_NAME}` is provided (e.g., `INITIAL_CAPITAL_SP400`), that portfolio uses that specific amount
+- If `INITIAL_CAPITAL_{INDEX_NAME}` is **not** provided, the portfolio uses the `INITIAL_CAPITAL` value (defaults to `10000.0`)
+- Example: If `TRADE_INDICES=SP400,SP500` is set but only `INITIAL_CAPITAL_SP400=50000` is provided, then:
+  - SP400 portfolio uses `50000`
+  - SP500 portfolio uses `INITIAL_CAPITAL` value (or `10000.0` if not set)
+
 **Method 2: JSON Configuration**
 ```bash
 PORTFOLIO_CONFIG='[{"portfolio_name":"SP400","index_id":"13","initial_capital":50000,"enabled":true}]'

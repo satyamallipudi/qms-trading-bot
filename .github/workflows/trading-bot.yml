@@ -54,6 +54,11 @@ jobs:
           
           # Trading Configuration (non-sensitive, use vars)
           INITIAL_CAPITAL: ${{ vars.INITIAL_CAPITAL }}
+          TRADE_INDICES: ${{ vars.TRADE_INDICES }}
+          INITIAL_CAPITAL_SP400: ${{ vars.INITIAL_CAPITAL_SP400 }}
+          INITIAL_CAPITAL_SP500: ${{ vars.INITIAL_CAPITAL_SP500 }}
+          INITIAL_CAPITAL_SP600: ${{ vars.INITIAL_CAPITAL_SP600 }}
+          INITIAL_CAPITAL_NDX: ${{ vars.INITIAL_CAPITAL_NDX }}
           SCHEDULER_MODE: external  # Required for GitHub Actions
           
           # Execution Control
