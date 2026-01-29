@@ -4,10 +4,10 @@ import logging
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .email_notifier import EmailNotifier
-from ..broker.models import TradeSummary
+from ..broker.models import TradeSummary, MultiPortfolioSummary
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +42,23 @@ class SMTPNotifier(EmailNotifier):
     def send_trade_summary(
         self,
         recipient: str,
-        trade_summary: TradeSummary,
-        leaderboard_symbols: List[str],
+        trade_summary,
+        leaderboard_symbols: Optional[List[str]] = None,
+        portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
     ) -> bool:
         """Send trade summary email via SMTP."""
         try:
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = "Portfolio Rebalancing Summary"
+            subject = "Portfolio Rebalancing Summary"
+            if isinstance(trade_summary, MultiPortfolioSummary):
+                subject = "Multi-Portfolio Rebalancing Summary"
+            msg["Subject"] = subject
             msg["From"] = self.from_email
             msg["To"] = recipient
             
             # Create text and HTML versions
-            text_content = self._format_trade_summary_text(trade_summary, leaderboard_symbols)
-            html_content = self._format_trade_summary_html(trade_summary, leaderboard_symbols)
+            text_content = self._format_trade_summary_text(trade_summary, leaderboard_symbols, portfolio_leaderboards)
+            html_content = self._format_trade_summary_html(trade_summary, leaderboard_symbols, portfolio_leaderboards)
             
             part1 = MIMEText(text_content, "plain")
             part2 = MIMEText(html_content, "html")

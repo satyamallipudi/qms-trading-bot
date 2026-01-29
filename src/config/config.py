@@ -1,12 +1,21 @@
 """Configuration management for the trading bot."""
 
 import os
-from typing import Optional
+import json
+from typing import Optional, List
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Index name to ID mapping
+INDEX_NAME_TO_ID = {
+    "SP400": "13",
+    "SP500": "9",
+    "SP600": "12",
+    "NDX": "8"
+}
 
 
 class BrokerConfig(BaseModel):
@@ -136,6 +145,15 @@ class PersistenceConfig(BaseModel):
         return bool(self.project_id and (self.credentials_path or self.credentials_json))
 
 
+class PortfolioConfig(BaseModel):
+    """Portfolio configuration for multi-portfolio support."""
+    
+    portfolio_name: str = Field(description="Portfolio name (e.g., 'SP400', 'SP500')")
+    index_id: str = Field(description="Internal API index ID (e.g., '13', '9')")
+    initial_capital: float = Field(description="Initial capital for this portfolio")
+    enabled: bool = Field(default=True, description="Whether this portfolio is enabled")
+
+
 class Config(BaseModel):
     """Main configuration class."""
 
@@ -145,6 +163,9 @@ class Config(BaseModel):
     
     # Trading
     initial_capital: float = Field(default=10000.0, description="Initial capital for portfolio allocation")
+    
+    # Multi-portfolio configuration
+    portfolios: List[PortfolioConfig] = Field(default_factory=list, description="List of portfolio configurations")
     
     # Broker configuration
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
@@ -157,6 +178,9 @@ class Config(BaseModel):
     
     # Persistence configuration
     persistence: PersistenceConfig = Field(default_factory=PersistenceConfig)
+    
+    # Security
+    mask_financial_amounts: bool = Field(default=True, description="Mask financial amounts in logs")
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -229,14 +253,23 @@ class Config(BaseModel):
         initial_capital_str = os.getenv("INITIAL_CAPITAL", "10000.0")
         initial_capital = float(initial_capital_str) if initial_capital_str and initial_capital_str.strip() else 10000.0
         
+        # Parse portfolio configuration
+        portfolios = cls._parse_portfolio_config(initial_capital)
+        
+        # Handle MASK_FINANCIAL_AMOUNTS
+        mask_financial_amounts_env = os.getenv("MASK_FINANCIAL_AMOUNTS", "true").lower()
+        mask_financial_amounts = mask_financial_amounts_env == "true"
+        
         config = cls(
             leaderboard_api_url=os.getenv("LEADERBOARD_API_URL", ""),
             leaderboard_api_token=os.getenv("LEADERBOARD_API_TOKEN", ""),
             initial_capital=initial_capital,
+            portfolios=portfolios,
             broker=broker_config,
             email=email_config,
             scheduler=scheduler_config,
             persistence=persistence_config,
+            mask_financial_amounts=mask_financial_amounts,
         )
         
         # Validate required fields
@@ -245,11 +278,80 @@ class Config(BaseModel):
         if not config.leaderboard_api_token:
             raise ValueError("LEADERBOARD_API_TOKEN is required")
         
+        # Validate multiple portfolios require persistence
+        if len(config.portfolios) > 1 and not config.persistence.enabled:
+            raise ValueError(
+                "Multiple portfolios require persistence to be enabled. "
+                "Please set PERSISTENCE_ENABLED=true and configure Firebase credentials, "
+                "or use a single portfolio (TRADE_INDICES=SP400)."
+            )
+        
         # Validate broker and email credentials
         config.broker.validate_broker_credentials()
         config.email.validate_email_credentials()
         
         return config
+    
+    @classmethod
+    def _parse_portfolio_config(cls, default_initial_capital: float) -> List[PortfolioConfig]:
+        """Parse portfolio configuration from environment variables."""
+        portfolios = []
+        
+        # Check for PORTFOLIO_CONFIG JSON string first
+        portfolio_config_json = os.getenv("PORTFOLIO_CONFIG")
+        if portfolio_config_json:
+            try:
+                config_data = json.loads(portfolio_config_json)
+                if isinstance(config_data, list):
+                    for portfolio_data in config_data:
+                        portfolio_name = portfolio_data.get("portfolio_name")
+                        index_id = portfolio_data.get("index_id")
+                        initial_capital = portfolio_data.get("initial_capital", default_initial_capital)
+                        enabled = portfolio_data.get("enabled", True)
+                        
+                        if portfolio_name and index_id:
+                            if portfolio_name not in INDEX_NAME_TO_ID:
+                                raise ValueError(f"Invalid portfolio name: {portfolio_name}. Must be one of: {', '.join(INDEX_NAME_TO_ID.keys())}")
+                            portfolios.append(PortfolioConfig(
+                                portfolio_name=portfolio_name,
+                                index_id=index_id,
+                                initial_capital=float(initial_capital),
+                                enabled=enabled
+                            ))
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid PORTFOLIO_CONFIG JSON: {e}")
+        
+        # Otherwise, parse from TRADE_INDICES
+        if not portfolios:
+            trade_indices = os.getenv("TRADE_INDICES", "").strip()
+            if trade_indices:
+                index_names = [name.strip() for name in trade_indices.split(",") if name.strip()]
+            else:
+                # Default to single portfolio SP400
+                index_names = ["SP400"]
+            
+            for index_name in index_names:
+                if index_name not in INDEX_NAME_TO_ID:
+                    raise ValueError(f"Invalid index name: {index_name}. Must be one of: {', '.join(INDEX_NAME_TO_ID.keys())}")
+                
+                index_id = INDEX_NAME_TO_ID[index_name]
+                
+                # Get initial capital for this portfolio
+                capital_env_var = f"INITIAL_CAPITAL_{index_name}"
+                capital_str = os.getenv(capital_env_var)
+                if capital_str and capital_str.strip():
+                    initial_capital = float(capital_str)
+                else:
+                    initial_capital = default_initial_capital
+                
+                portfolios.append(PortfolioConfig(
+                    portfolio_name=index_name,
+                    index_id=index_id,
+                    initial_capital=initial_capital,
+                    enabled=True
+                ))
+        
+        return portfolios
 
 
 # Global config instance

@@ -4,12 +4,14 @@ import logging
 import signal
 import sys
 import os
-from typing import Optional
+from typing import Optional, Dict, List
 from datetime import datetime
 import pytz
 
 from .config import get_config
+from .config.config import INDEX_NAME_TO_ID
 from .broker import create_broker
+from .broker.models import TradeSummary, PortfolioPerformance, MultiPortfolioSummary
 from .leaderboard import LeaderboardClient
 from .notifications import create_email_notifier
 from .trading import Rebalancer
@@ -33,7 +35,7 @@ class TradingBot:
         self.broker = None
         self.leaderboard_client = None
         self.email_notifier = None
-        self.rebalancer = None
+        self.rebalancers: Dict[str, Rebalancer] = {}
         self.scheduler = None
         self.app = None
         
@@ -96,16 +98,38 @@ class TradingBot:
                 persistence_manager = None
         else:
             logger.info("Persistence disabled")
+            persistence_manager = None
         
-        # Initialize rebalancer
-        self.rebalancer = Rebalancer(
-            broker=self.broker,
-            leaderboard_client=self.leaderboard_client,
-            initial_capital=self.config.initial_capital,
-            email_notifier=self.email_notifier,
-            persistence_manager=persistence_manager,
-        )
-        logger.info("Initialized rebalancer")
+        # Initialize rebalancers (one per portfolio)
+        self.rebalancers: Dict[str, Rebalancer] = {}
+        
+        # If no portfolios configured, create default single portfolio
+        if not self.config.portfolios:
+            # Default to SP400
+            from .config.config import PortfolioConfig
+            default_portfolio = PortfolioConfig(
+                portfolio_name="SP400",
+                index_id=INDEX_NAME_TO_ID["SP400"],
+                initial_capital=self.config.initial_capital,
+                enabled=True,
+            )
+            self.config.portfolios = [default_portfolio]
+        
+        for portfolio_config in self.config.portfolios:
+            if not portfolio_config.enabled:
+                continue
+            
+            rebalancer = Rebalancer(
+                broker=self.broker,
+                leaderboard_client=self.leaderboard_client,
+                initial_capital=portfolio_config.initial_capital,
+                portfolio_name=portfolio_config.portfolio_name,
+                index_id=portfolio_config.index_id,
+                email_notifier=self.email_notifier,
+                persistence_manager=persistence_manager,
+            )
+            self.rebalancers[portfolio_config.portfolio_name] = rebalancer
+            logger.info(f"Initialized rebalancer for {portfolio_config.portfolio_name} portfolio (index {portfolio_config.index_id})")
         
         # Initialize scheduler based on mode
         if self.config.scheduler.mode == "internal":
@@ -245,22 +269,72 @@ class TradingBot:
                 logger.info("Executing rebalancing (Scheduled run - always executes)...")
         
         try:
-            summary = self.rebalancer.rebalance(dry_run=dry_run)
-            logger.info(f"Rebalancing {'simulation' if dry_run else 'execution'} completed. Portfolio value: ${summary.portfolio_value:.2f}")
+            # Execute rebalancing for each portfolio
+            portfolio_summaries: Dict[str, TradeSummary] = {}
+            portfolio_leaderboards: Dict[str, List[str]] = {}
             
-            # Send email notification if enabled (only in real execution mode)
-            if not dry_run and self.email_notifier and self.config.email.recipient:
+            if not self.rebalancers:
+                raise ValueError("No portfolios configured. Please set TRADE_INDICES environment variable.")
+            
+            for portfolio_name, rebalancer in self.rebalancers.items():
                 try:
-                    leaderboard_symbols = self.leaderboard_client.get_top_symbols(top_n=5)
-                    self.email_notifier.send_trade_summary(
-                        recipient=self.config.email.recipient,
-                        trade_summary=summary,
-                        leaderboard_symbols=leaderboard_symbols,
+                    logger.info(f"[{portfolio_name}] Starting rebalancing...")
+                    summary = rebalancer.rebalance(dry_run=dry_run)
+                    portfolio_summaries[portfolio_name] = summary
+                    
+                    # Get leaderboard symbols for this portfolio
+                    current_week_mom_day = self.leaderboard_client._get_previous_sunday()
+                    leaderboard_symbols = self.leaderboard_client.get_top_symbols(
+                        top_n=5, 
+                        mom_day=current_week_mom_day,
+                        index_id=rebalancer.index_id
                     )
-                except Exception as email_error:
-                    logger.error(f"Error sending email notification: {email_error}")
+                    portfolio_leaderboards[portfolio_name] = leaderboard_symbols
+                    
+                    logger.info(f"[{portfolio_name}] Rebalancing {'simulation' if dry_run else 'execution'} completed. Portfolio value: ${summary.portfolio_value:.2f}")
+                except Exception as portfolio_error:
+                    logger.error(f"[{portfolio_name}] Error during rebalancing: {portfolio_error}")
+                    # Continue with other portfolios
             
-            return summary
+            # Calculate performance metrics for each portfolio
+            performances: Dict[str, PortfolioPerformance] = {}
+            for portfolio_name, summary in portfolio_summaries.items():
+                performance = self._calculate_portfolio_performance(portfolio_name, summary)
+                performances[portfolio_name] = performance
+            
+            # Create multi-portfolio summary
+            if len(portfolio_summaries) > 1:
+                multi_summary = self._create_multi_portfolio_summary(portfolio_summaries, performances)
+                
+                # Send email notification if enabled (only in real execution mode)
+                if not dry_run and self.email_notifier and self.config.email.recipient:
+                    try:
+                        self.email_notifier.send_trade_summary(
+                            recipient=self.config.email.recipient,
+                            trade_summary=multi_summary,
+                            portfolio_leaderboards=portfolio_leaderboards,
+                        )
+                    except Exception as email_error:
+                        logger.error(f"Error sending email notification: {email_error}")
+                
+                return multi_summary
+            else:
+                # Single portfolio - return single summary
+                summary = list(portfolio_summaries.values())[0]
+                
+                # Send email notification if enabled (only in real execution mode)
+                if not dry_run and self.email_notifier and self.config.email.recipient:
+                    try:
+                        leaderboard_symbols = list(portfolio_leaderboards.values())[0] if portfolio_leaderboards else []
+                        self.email_notifier.send_trade_summary(
+                            recipient=self.config.email.recipient,
+                            trade_summary=summary,
+                            leaderboard_symbols=leaderboard_symbols,
+                        )
+                    except Exception as email_error:
+                        logger.error(f"Error sending email notification: {email_error}")
+                
+                return summary
         except Exception as e:
             logger.error(f"Error during rebalancing: {e}")
             # Send error notification if email is enabled (only in real execution mode)
@@ -274,6 +348,56 @@ class TradingBot:
                 except Exception as email_error:
                     logger.error(f"Error sending error notification: {email_error}")
             raise
+    
+    def _calculate_portfolio_performance(
+        self,
+        portfolio_name: str,
+        trade_summary: TradeSummary
+    ) -> PortfolioPerformance:
+        """Calculate performance metrics for a portfolio."""
+        initial_capital = trade_summary.initial_capital
+        current_value = trade_summary.portfolio_value
+        total_cost = trade_summary.total_cost
+        total_proceeds = trade_summary.total_proceeds
+        
+        total_return = current_value - initial_capital
+        total_return_pct = (total_return / initial_capital * 100) if initial_capital > 0 else 0.0
+        net_invested = total_cost - total_proceeds
+        unrealized_pnl = current_value - net_invested
+        realized_pnl = total_proceeds - total_cost
+        
+        return PortfolioPerformance(
+            portfolio_name=portfolio_name,
+            initial_capital=initial_capital,
+            current_value=current_value,
+            total_return=total_return,
+            total_return_pct=total_return_pct,
+            total_cost=total_cost,
+            total_proceeds=total_proceeds,
+            net_invested=net_invested,
+            unrealized_pnl=unrealized_pnl,
+            realized_pnl=realized_pnl,
+        )
+    
+    def _create_multi_portfolio_summary(
+        self,
+        portfolio_summaries: Dict[str, TradeSummary],
+        performances: Dict[str, PortfolioPerformance]
+    ) -> MultiPortfolioSummary:
+        """Create multi-portfolio summary with aggregate metrics."""
+        total_initial_capital = sum(p.initial_capital for p in performances.values())
+        total_current_value = sum(p.current_value for p in performances.values())
+        overall_return = total_current_value - total_initial_capital
+        overall_return_pct = (overall_return / total_initial_capital * 100) if total_initial_capital > 0 else 0.0
+        
+        return MultiPortfolioSummary(
+            portfolios=portfolio_summaries,
+            performances=performances,
+            total_initial_capital=total_initial_capital,
+            total_current_value=total_current_value,
+            overall_return=overall_return,
+            overall_return_pct=overall_return_pct,
+        )
     
     def run(self):
         """Run the trading bot."""

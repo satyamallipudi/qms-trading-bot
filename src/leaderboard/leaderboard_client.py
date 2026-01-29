@@ -72,13 +72,14 @@ class LeaderboardClient:
         previous_week_sunday = previous_sunday - timedelta(days=7)
         return previous_week_sunday.strftime("%Y-%m-%d")
     
-    def get_top_symbols(self, top_n: int = 5, mom_day: Optional[str] = None) -> List[str]:
+    def get_top_symbols(self, top_n: int = 5, mom_day: Optional[str] = None, index_id: str = "13") -> List[str]:
         """
         Fetch top N symbols from leaderboard.
         
         Args:
             top_n: Number of top symbols to return (default: 5)
             mom_day: Optional date string in YYYY-MM-DD format. If not provided, uses previous Sunday.
+            index_id: Index ID for the leaderboard (default: "13" for SP400)
             
         Returns:
             List of stock symbols (strings)
@@ -93,7 +94,7 @@ class LeaderboardClient:
             
             # Prepare POST request body
             request_body = {
-                "indexId": "13",
+                "indexId": index_id,
                 "algoId": "1",
                 "momDay": mom_day
             }

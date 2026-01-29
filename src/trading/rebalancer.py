@@ -19,6 +19,8 @@ class Rebalancer:
         broker: Broker,
         leaderboard_client: LeaderboardClient,
         initial_capital: float,
+        portfolio_name: str,
+        index_id: str,
         email_notifier: Optional[EmailNotifier] = None,
         persistence_manager: Optional[object] = None,  # PersistenceManager type
     ):
@@ -29,12 +31,16 @@ class Rebalancer:
             broker: Broker instance
             leaderboard_client: Leaderboard API client
             initial_capital: Initial capital for portfolio allocation
+            portfolio_name: Portfolio name (e.g., "SP400", "SP500")
+            index_id: Internal API index ID (e.g., "13", "9")
             email_notifier: Optional email notifier
             persistence_manager: Optional persistence manager for trade tracking
         """
         self.broker = broker
         self.leaderboard_client = leaderboard_client
         self.initial_capital = initial_capital
+        self.portfolio_name = portfolio_name
+        self.index_id = index_id
         self.email_notifier = email_notifier
         self.persistence_manager = persistence_manager
     
@@ -48,19 +54,19 @@ class Rebalancer:
         Returns:
             TradeSummary with details of executed trades (or simulated trades in dry-run mode)
         """
-        logger.info("Starting portfolio rebalancing")
+        logger.info(f"[{self.portfolio_name}] Starting portfolio rebalancing")
         
         # Fetch current week (week-1) and previous week (week-2) leaderboards
         try:
             # Current week (week-1): previous Sunday
             current_week_mom_day = self.leaderboard_client._get_previous_sunday()
-            current_week_symbols = self.leaderboard_client.get_top_symbols(top_n=5, mom_day=current_week_mom_day)
-            logger.info(f"Current week (week-1) leaderboard top 5: {current_week_symbols}")
+            current_week_symbols = self.leaderboard_client.get_top_symbols(top_n=5, mom_day=current_week_mom_day, index_id=self.index_id)
+            logger.info(f"[{self.portfolio_name}] Current week (week-1) leaderboard top 5: {current_week_symbols}")
             
             # Previous week (week-2): Sunday from two weeks ago
             previous_week_mom_day = self.leaderboard_client._get_previous_week_sunday()
-            previous_week_symbols = self.leaderboard_client.get_top_symbols(top_n=5, mom_day=previous_week_mom_day)
-            logger.info(f"Previous week (week-2) leaderboard top 5: {previous_week_symbols}")
+            previous_week_symbols = self.leaderboard_client.get_top_symbols(top_n=5, mom_day=previous_week_mom_day, index_id=self.index_id)
+            logger.info(f"[{self.portfolio_name}] Previous week (week-2) leaderboard top 5: {previous_week_symbols}")
         except Exception as e:
             logger.error(f"Error fetching leaderboard: {e}")
             raise
@@ -69,9 +75,9 @@ class Rebalancer:
         try:
             current_allocations = self.broker.get_current_allocation()
             current_symbols = {alloc.symbol.upper() for alloc in current_allocations}
-            logger.info(f"Current positions: {current_symbols}")
+            logger.info(f"[{self.portfolio_name}] Current positions: {current_symbols}")
         except Exception as e:
-            logger.error(f"Error getting current allocation: {e}")
+            logger.error(f"[{self.portfolio_name}] Error getting current allocation: {e}")
             raise
         
         # Reconcile with broker trade history if persistence is enabled
@@ -80,13 +86,13 @@ class Rebalancer:
                 # Get trade history from broker (last 7 days)
                 broker_trades = self.broker.get_trade_history(since_days=7)
                 if broker_trades:
-                    logger.info(f"Reconciling {len(broker_trades)} broker trades with Firestore...")
+                    logger.info(f"[{self.portfolio_name}] Reconciling {len(broker_trades)} broker trades with Firestore...")
                     reconciliation_result = self.persistence_manager.reconcile_with_broker_history(broker_trades)
-                    logger.info(f"Reconciliation complete: {reconciliation_result['updated']} updated, "
+                    logger.info(f"[{self.portfolio_name}] Reconciliation complete: {reconciliation_result['updated']} updated, "
                               f"{reconciliation_result['missing']} missing, "
                               f"{reconciliation_result['unfilled']} unfilled")
             except Exception as e:
-                logger.warning(f"Error reconciling trade history: {e}")
+                logger.warning(f"[{self.portfolio_name}] Error reconciling trade history: {e}")
                 # Continue without reconciliation if there's an error
         
         # Detect external sales if persistence is enabled
@@ -118,9 +124,9 @@ class Rebalancer:
         # Get cash balance
         try:
             cash_balance = self.broker.get_account_cash()
-            logger.info(f"Current cash balance: ${cash_balance}")
+            logger.info(f"[{self.portfolio_name}] Current cash balance: ${cash_balance}")
         except Exception as e:
-            logger.error(f"Error getting account cash: {e}")
+            logger.error(f"[{self.portfolio_name}] Error getting account cash: {e}")
             raise
         
         # Case 1: No stocks from previous week's LB exist and 10k cash balance exists
@@ -128,13 +134,13 @@ class Rebalancer:
         available_capital = cash_balance + external_sale_proceeds
         if not positions_from_prev_week and available_capital >= 10000.0:
             capital_to_use = self.initial_capital + external_sale_proceeds
-            logger.info(f"No stocks from previous week's LB exist and available capital >= $10k. Entering trades for top 5 stocks using ${capital_to_use:.2f} (initial_capital + external sale proceeds).")
+            logger.info(f"[{self.portfolio_name}] No stocks from previous week's LB exist and available capital >= $10k. Entering trades for top 5 stocks using ${capital_to_use:.2f} (initial_capital + external sale proceeds).")
             return self._initial_allocation(current_week_symbols_upper, capital_to_use, dry_run=dry_run)
         
         # Case 2: Compare top 5 stocks between LB-1 and LB
         # Sell stocks that were in last week's top 5 but aren't in this week's top 5
         # Buy stocks that entered this week's top 5
-        logger.info("Comparing leaderboards and executing rebalancing...")
+        logger.info(f"[{self.portfolio_name}] Comparing leaderboards and executing rebalancing...")
         return self._execute_week_over_week_rebalancing(
             current_allocations,
             current_week_symbols_upper,
@@ -166,9 +172,9 @@ class Rebalancer:
         allocation_per_stock = round(allocation_amount / len(symbols), 2)
         
         if dry_run:
-            logger.info(f"[DRY-RUN] Would divide ${allocation_amount} into {len(symbols)} stocks: ${allocation_per_stock} each")
+            logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would divide ${allocation_amount} into {len(symbols)} stocks: ${allocation_per_stock} each")
         else:
-            logger.info(f"Dividing ${allocation_amount} into {len(symbols)} stocks: ${allocation_per_stock} each")
+            logger.info(f"[{self.portfolio_name}] Dividing ${allocation_amount} into {len(symbols)} stocks: ${allocation_per_stock} each")
         
         for symbol in symbols:
             if dry_run:
@@ -177,7 +183,7 @@ class Rebalancer:
                     "quantity": 0,  # Will be estimated
                     "cost": allocation_per_stock,
                 })
-                logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol}")
+                logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol}")
             else:
                 try:
                     success = self.broker.buy(symbol, allocation_per_stock)
@@ -187,7 +193,7 @@ class Rebalancer:
                             "quantity": 0,  # Will be updated after getting positions
                             "cost": allocation_per_stock,
                         })
-                        logger.info(f"Bought ${allocation_per_stock} of {symbol}")
+                        logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol}")
                         
                         # Record trade in persistence
                         if self.persistence_manager:
@@ -209,6 +215,7 @@ class Rebalancer:
                                 price=current_price,
                                 total=allocation_per_stock,
                                 timestamp=datetime.now(),
+                                portfolio_name=self.portfolio_name,
                             )
                             self.persistence_manager.record_trade(trade)
                     else:
@@ -264,9 +271,9 @@ class Rebalancer:
         
         # Filter by persistence ownership if enabled
         if self.persistence_manager:
-            owned_symbols = self.persistence_manager.get_owned_symbols()
+            owned_symbols = self.persistence_manager.get_owned_symbols(self.portfolio_name)
             symbols_to_sell = symbols_to_sell & owned_symbols
-            logger.info(f"Persistence enabled: Only selling from owned symbols: {owned_symbols}")
+            logger.info(f"[{self.portfolio_name}] Persistence enabled: Only selling from owned symbols: {owned_symbols}")
         
         # Find symbols to buy: in current week's top 5 but not currently held
         symbols_to_buy = current_week_set - current_symbols
@@ -275,18 +282,18 @@ class Rebalancer:
         # 1. Symbols that are held but NOT purchased by bot (manually purchased stocks that enter top 5)
         # 2. Symbols that had external sales and are still in top 5 (buy back using external sale proceeds)
         if self.persistence_manager:
-            owned_symbols = self.persistence_manager.get_owned_symbols()
+            owned_symbols = self.persistence_manager.get_owned_symbols(self.portfolio_name)
             # Find symbols in top 5 that are held but not owned by bot
             manually_held_in_top5 = (current_week_set & current_symbols) - owned_symbols
             if manually_held_in_top5:
-                logger.info(f"Found manually purchased stocks in top 5: {manually_held_in_top5}. Will buy to bring to target allocation.")
+                logger.info(f"[{self.portfolio_name}] Found manually purchased stocks in top 5: {manually_held_in_top5}. Will buy to bring to target allocation.")
                 symbols_to_buy = symbols_to_buy | manually_held_in_top5
             
             # Find symbols in top 5 that had external sales (buy back using those proceeds)
             symbols_with_external_sales = set(external_sales_by_symbol.keys())
             symbols_to_buyback = (current_week_set & current_symbols) & symbols_with_external_sales
             if symbols_to_buyback:
-                logger.info(f"Found stocks in top 5 with external sales: {symbols_to_buyback}. Will buy back using external sale proceeds.")
+                logger.info(f"[{self.portfolio_name}] Found stocks in top 5 with external sales: {symbols_to_buyback}. Will buy back using external sale proceeds.")
                 symbols_to_buy = symbols_to_buy | symbols_to_buyback
         
         sells = []
@@ -304,13 +311,25 @@ class Rebalancer:
                         "proceeds": allocation.market_value,
                     })
                     total_proceeds += allocation.market_value
-                    logger.info(f"[DRY-RUN] Would sell {allocation.quantity} shares of {symbol} for ${allocation.market_value} (dropped out of top 5)")
+                    logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would sell {allocation.quantity} shares of {symbol} for ${allocation.market_value} (dropped out of top 5)")
                 else:
                     try:
                         # Check persistence ownership if enabled
                         if self.persistence_manager:
-                            if not self.persistence_manager.can_sell(symbol, allocation.quantity):
-                                logger.warning(f"Cannot sell {symbol}: Not owned according to persistence (owned: {self.persistence_manager.get_ownership_quantity(symbol)})")
+                            # Check if other portfolios own this stock
+                            other_portfolios = self.persistence_manager.get_all_portfolios_owning_symbol(symbol)
+                            if len(other_portfolios) > 1 or (len(other_portfolios) == 1 and other_portfolios[0] != self.portfolio_name):
+                                # Multiple portfolios own this stock - calculate sellable quantity
+                                portfolio_fraction = self.persistence_manager.get_portfolio_fraction(symbol, self.portfolio_name)
+                                broker_quantity = allocation.quantity
+                                sellable_quantity = min(allocation.quantity, broker_quantity * portfolio_fraction)
+                                if sellable_quantity < allocation.quantity:
+                                    logger.info(f"[{self.portfolio_name}] Selling {sellable_quantity} shares of {symbol} (portfolio's portion, other portfolios: {[p for p in other_portfolios if p != self.portfolio_name]})")
+                                    allocation.quantity = sellable_quantity
+                                    allocation.market_value = allocation.current_price * sellable_quantity
+                            
+                            if not self.persistence_manager.can_sell(symbol, allocation.quantity, self.portfolio_name):
+                                logger.warning(f"[{self.portfolio_name}] Cannot sell {symbol}: Not owned according to persistence (owned: {self.persistence_manager.get_ownership_quantity(symbol, self.portfolio_name)})")
                                 continue
                         
                         success = self.broker.sell(symbol, allocation.quantity)
@@ -343,6 +362,7 @@ class Rebalancer:
                                     total=allocation.market_value,
                                     timestamp=datetime.now(),
                                     trade_id=order_id,
+                                    portfolio_name=self.portfolio_name,
                                 )
                                 self.persistence_manager.record_trade(trade)
                         else:
@@ -355,14 +375,14 @@ class Rebalancer:
         try:
             current_cash = self.broker.get_account_cash()
             if dry_run:
-                logger.info(f"Current cash balance: ${current_cash}")
-                logger.info(f"Proceeds from sales: ${total_proceeds}")
+                logger.info(f"[{self.portfolio_name}] Current cash balance: ${current_cash}")
+                logger.info(f"[{self.portfolio_name}] Proceeds from sales: ${total_proceeds}")
                 if external_sale_proceeds > 0:
-                    logger.info(f"External sale proceeds: ${external_sale_proceeds}")
+                    logger.info(f"[{self.portfolio_name}] External sale proceeds: ${external_sale_proceeds}")
             else:
-                logger.info(f"Available cash: ${current_cash}")
+                logger.info(f"[{self.portfolio_name}] Available cash: ${current_cash}")
         except Exception as e:
-            logger.error(f"Error getting account cash: {e}")
+            logger.error(f"[{self.portfolio_name}] Error getting account cash: {e}")
         
         # Buy new positions that entered top 5 (equal weight) using proceeds from sales + external sales
         total_available = total_proceeds + external_sale_proceeds
@@ -370,28 +390,28 @@ class Rebalancer:
             if total_available == 0:
                 # Check if any are manually held stocks that need bot purchase
                 if self.persistence_manager:
-                    manually_held = symbols_to_buy & (current_symbols - self.persistence_manager.get_owned_symbols())
+                    manually_held = symbols_to_buy & (current_symbols - self.persistence_manager.get_owned_symbols(self.portfolio_name))
                     if manually_held:
-                        logger.warning(f"Manually purchased stocks in top 5: {manually_held}, but no proceeds from sales available. Cannot buy to bring to target allocation.")
+                        logger.warning(f"[{self.portfolio_name}] Manually purchased stocks in top 5: {manually_held}, but no proceeds from sales available. Cannot buy to bring to target allocation.")
                     else:
-                        logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds available. Skipping purchases.")
+                        logger.warning(f"[{self.portfolio_name}] Symbols to buy: {symbols_to_buy}, but no proceeds available. Skipping purchases.")
                 else:
-                    logger.warning(f"Symbols to buy: {symbols_to_buy}, but no proceeds available. Skipping purchases.")
+                    logger.warning(f"[{self.portfolio_name}] Symbols to buy: {symbols_to_buy}, but no proceeds available. Skipping purchases.")
             else:
                 # Use proceeds from sales + external sale proceeds
                 # Round to 2 decimal places (Alpaca requires notional values to be limited to 2 decimal places)
                 allocation_per_stock = round(total_available / len(symbols_to_buy), 2)
                 if dry_run:
-                    logger.info(f"[DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using proceeds: ${total_available:.2f})")
+                    logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using proceeds: ${total_available:.2f})")
                 else:
-                    logger.info(f"Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using proceeds: ${total_available:.2f})")
+                    logger.info(f"[{self.portfolio_name}] Buying {len(symbols_to_buy)} new stocks with ${allocation_per_stock} each (using proceeds: ${total_available:.2f})")
                 
                 for symbol in symbols_to_buy:
                     # Check if this is a manually held stock being bought by bot
                     is_manually_held = False
                     is_buyback = False
                     if self.persistence_manager and symbol in current_symbols:
-                        owned_symbols = self.persistence_manager.get_owned_symbols()
+                        owned_symbols = self.persistence_manager.get_owned_symbols(self.portfolio_name)
                         is_manually_held = symbol not in owned_symbols
                         is_buyback = symbol in external_sales_by_symbol
                     
@@ -403,11 +423,11 @@ class Rebalancer:
                         })
                         if is_buyback:
                             external_sale = external_sales_by_symbol.get(symbol)
-                            logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
+                            logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
                         elif is_manually_held:
-                            logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
+                            logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
                         else:
-                            logger.info(f"[DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (entered top 5)")
+                            logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol} (entered top 5)")
                     else:
                         try:
                             success = self.broker.buy(symbol, allocation_per_stock)
@@ -419,11 +439,11 @@ class Rebalancer:
                                 })
                                 if is_buyback:
                                     external_sale = external_sales_by_symbol.get(symbol)
-                                    logger.info(f"Bought ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
+                                    logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol} (buying back after external sale of {external_sale.quantity} shares)")
                                 elif is_manually_held:
-                                    logger.info(f"Bought ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
+                                    logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol} (manually held stock entered top 5, buying to bring to target allocation)")
                                 else:
-                                    logger.info(f"Bought ${allocation_per_stock} of {symbol} (entered top 5)")
+                                    logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol} (entered top 5)")
                                 
                                 # Record trade in persistence
                                 if self.persistence_manager:
@@ -451,6 +471,7 @@ class Rebalancer:
                                         price=current_price,
                                         total=allocation_per_stock,
                                         timestamp=datetime.now(),
+                                        portfolio_name=self.portfolio_name,
                                     )
                                     self.persistence_manager.record_trade(trade)
                             else:
@@ -482,14 +503,14 @@ class Rebalancer:
             # Calculate how much external sale proceeds were used
             external_portion = min(external_sale_proceeds, total_available)
             if external_portion > 0:
-                self.persistence_manager.mark_external_sales_used(external_portion)
-                logger.info(f"Marked ${external_portion:.2f} of external sale proceeds as used for reinvestment")
+                self.persistence_manager.mark_external_sales_used(external_portion, self.portfolio_name)
+                logger.info(f"[{self.portfolio_name}] Marked ${external_portion:.2f} of external sale proceeds as used for reinvestment")
         
         if not sells and not buys:
             if dry_run:
-                logger.info("[DRY-RUN] No rebalancing needed - all positions match leaderboard changes")
+                logger.info(f"[{self.portfolio_name}] [DRY-RUN] No rebalancing needed - all positions match leaderboard changes")
             else:
-                logger.info("No rebalancing needed - all positions match leaderboard changes")
+                logger.info(f"[{self.portfolio_name}] No rebalancing needed - all positions match leaderboard changes")
         
         return self._create_summary(buys, sells, final_allocations)
     
@@ -511,6 +532,8 @@ class Rebalancer:
             total_proceeds=total_proceeds,
             final_allocations=final_allocations,
             portfolio_value=portfolio_value,
+            portfolio_name=self.portfolio_name,
+            initial_capital=self.initial_capital,
         )
         
         # Note: Email notification is handled in main.py after rebalancing completes

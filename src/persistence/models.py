@@ -16,6 +16,7 @@ class TradeRecord:
     total: float  # total cost/proceeds
     timestamp: datetime
     trade_id: Optional[str] = None
+    portfolio_name: str = "SP400"  # Default for backward compatibility
     
     def to_dict(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
@@ -27,6 +28,7 @@ class TradeRecord:
             "total": self.total,
             "timestamp": self.timestamp,
             "trade_id": self.trade_id,
+            "portfolio_name": self.portfolio_name,
         }
 
 
@@ -40,6 +42,7 @@ class OwnershipRecord:
     first_purchase_date: datetime
     last_purchase_date: datetime
     last_updated: datetime
+    portfolio_name: str = "SP400"  # Default for backward compatibility
     
     def to_dict(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
@@ -50,6 +53,7 @@ class OwnershipRecord:
             "first_purchase_date": self.first_purchase_date,
             "last_purchase_date": self.last_purchase_date,
             "last_updated": self.last_updated,
+            "portfolio_name": self.portfolio_name,
         }
 
 
@@ -63,6 +67,7 @@ class ExternalSaleRecord:
     detected_date: datetime
     used_for_reinvestment: bool = False
     reinvestment_date: Optional[datetime] = None
+    portfolio_name: str = "SP400"  # Default for backward compatibility
     
     def to_dict(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
@@ -73,4 +78,5 @@ class ExternalSaleRecord:
             "detected_date": self.detected_date,
             "used_for_reinvestment": self.used_for_reinvestment,
             "reinvestment_date": self.reinvestment_date,
+            "portfolio_name": self.portfolio_name,
         }

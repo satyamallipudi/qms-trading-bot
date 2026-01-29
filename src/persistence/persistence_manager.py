@@ -15,6 +15,7 @@ except ImportError:
 
 from .models import TradeRecord, OwnershipRecord, ExternalSaleRecord
 from src.broker.models import Allocation
+from typing import List as TypingList
 
 
 class PersistenceManager:
@@ -71,7 +72,10 @@ class PersistenceManager:
     def _update_ownership(self, trade: TradeRecord) -> None:
         """Update ownership record based on trade."""
         symbol = trade.symbol.upper()
-        ownership_ref = self.db.collection('ownership').document(symbol)
+        portfolio_name = trade.portfolio_name
+        # Use composite key: {portfolio_name}_{symbol}
+        doc_id = f"{portfolio_name}_{symbol}"
+        ownership_ref = self.db.collection('ownership').document(doc_id)
         ownership_doc = ownership_ref.get()
         
         if trade.action == "BUY":
@@ -100,6 +104,7 @@ class PersistenceManager:
                 # Create new ownership record
                 ownership_ref.set({
                     'symbol': symbol,
+                    'portfolio_name': portfolio_name,
                     'quantity': calculated_quantity,
                     'total_cost': trade.total,
                     'first_purchase_date': trade.timestamp,
@@ -130,10 +135,10 @@ class PersistenceManager:
                             'last_updated': trade.timestamp,
                         })
     
-    def get_owned_symbols(self) -> Set[str]:
-        """Get set of symbols we own according to persistence."""
+    def get_owned_symbols(self, portfolio_name: str = "SP400") -> Set[str]:
+        """Get set of symbols we own according to persistence for a specific portfolio."""
         ownership_ref = self.db.collection('ownership')
-        docs = ownership_ref.stream()
+        docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
         
         owned_symbols = set()
         for doc in docs:
@@ -144,10 +149,11 @@ class PersistenceManager:
         
         return owned_symbols
     
-    def get_ownership_quantity(self, symbol: str) -> float:
-        """Get owned quantity for a symbol."""
+    def get_ownership_quantity(self, symbol: str, portfolio_name: str = "SP400") -> float:
+        """Get owned quantity for a symbol in a specific portfolio."""
         symbol = symbol.upper()
-        ownership_ref = self.db.collection('ownership').document(symbol)
+        doc_id = f"{portfolio_name}_{symbol}"
+        ownership_ref = self.db.collection('ownership').document(doc_id)
         ownership_doc = ownership_ref.get()
         
         if ownership_doc.exists:
@@ -155,23 +161,66 @@ class PersistenceManager:
             return data.get('quantity', 0.0)
         return 0.0
     
-    def can_sell(self, symbol: str, quantity: float) -> bool:
-        """Check if we can sell the requested quantity."""
-        owned_quantity = self.get_ownership_quantity(symbol)
+    def can_sell(self, symbol: str, quantity: float, portfolio_name: str = "SP400") -> bool:
+        """Check if we can sell the requested quantity for a specific portfolio."""
+        owned_quantity = self.get_ownership_quantity(symbol, portfolio_name)
         return owned_quantity >= quantity
+    
+    def get_total_tracked_ownership(self, symbol: str) -> float:
+        """Get total tracked ownership across all portfolios for a symbol."""
+        symbol = symbol.upper()
+        ownership_ref = self.db.collection('ownership')
+        docs = ownership_ref.where('symbol', '==', symbol).stream()
+        
+        total_quantity = 0.0
+        for doc in docs:
+            data = doc.to_dict()
+            quantity = data.get('quantity', 0.0)
+            if quantity > 0:
+                total_quantity += quantity
+        
+        return total_quantity
+    
+    def get_portfolio_fraction(self, symbol: str, portfolio_name: str) -> float:
+        """Calculate portfolio's fraction of total tracked ownership for a symbol."""
+        symbol = symbol.upper()
+        portfolio_quantity = self.get_ownership_quantity(symbol, portfolio_name)
+        total_quantity = self.get_total_tracked_ownership(symbol)
+        
+        if total_quantity == 0:
+            return 0.0
+        
+        return portfolio_quantity / total_quantity
+    
+    def get_all_portfolios_owning_symbol(self, symbol: str) -> TypingList[str]:
+        """Get list of portfolio names that own a symbol."""
+        symbol = symbol.upper()
+        ownership_ref = self.db.collection('ownership')
+        docs = ownership_ref.where('symbol', '==', symbol).stream()
+        
+        portfolios = []
+        for doc in docs:
+            data = doc.to_dict()
+            quantity = data.get('quantity', 0.0)
+            portfolio_name = data.get('portfolio_name', 'SP400')
+            if quantity > 0 and portfolio_name not in portfolios:
+                portfolios.append(portfolio_name)
+        
+        return portfolios
     
     def detect_external_sales(
         self,
         broker_allocations: List[Allocation],
-        broker_transactions: Optional[List[dict]] = None
+        broker_transactions: Optional[List[dict]] = None,
+        portfolio_name: str = "SP400"
     ) -> List[ExternalSaleRecord]:
-        """Detect external sales by comparing DB ownership vs broker positions."""
+        """Detect external sales by comparing DB ownership vs broker positions for a specific portfolio."""
         external_sales = []
         
-        # Get DB ownership
+        # Get DB ownership for this portfolio
         db_ownership: Dict[str, float] = {}
         ownership_ref = self.db.collection('ownership')
-        docs = ownership_ref.stream()
+        docs = ownership_ref.where('portfolio_name', '==', portfolio_name).stream()
         for doc in docs:
             data = doc.to_dict()
             symbol = data.get('symbol', '').upper()
@@ -193,7 +242,8 @@ class PersistenceManager:
                 # Strategy: Assume remaining shares (up to bot's purchase count) are bot-owned
                 # This allows bot to continue managing remaining shares
                 
-                ownership_ref = self.db.collection('ownership').document(symbol)
+                doc_id = f"{portfolio_name}_{symbol}"
+                ownership_ref = self.db.collection('ownership').document(doc_id)
                 ownership_doc = ownership_ref.get()
                 if not ownership_doc.exists:
                     continue
@@ -231,6 +281,7 @@ class PersistenceManager:
                     quantity=sold_quantity,
                     estimated_proceeds=estimated_proceeds,
                     detected_date=datetime.now(),
+                    portfolio_name=portfolio_name,
                 )
                 external_sales.append(external_sale)
                 
@@ -286,10 +337,10 @@ class PersistenceManager:
         doc_ref = collection.document()
         doc_ref.set(sale.to_dict())
     
-    def get_unused_external_sale_proceeds(self) -> float:
-        """Get total proceeds from external sales not yet used for reinvestment."""
+    def get_unused_external_sale_proceeds(self, portfolio_name: str = "SP400") -> float:
+        """Get total proceeds from external sales not yet used for reinvestment for a specific portfolio."""
         external_sales_ref = self.db.collection('external_sales')
-        docs = external_sales_ref.where('used_for_reinvestment', '==', False).stream()
+        docs = external_sales_ref.where('used_for_reinvestment', '==', False).where('portfolio_name', '==', portfolio_name).stream()
         
         total_proceeds = 0.0
         for doc in docs:
@@ -298,10 +349,10 @@ class PersistenceManager:
         
         return total_proceeds
     
-    def mark_external_sales_used(self, amount: float) -> None:
-        """Mark external sales as used for reinvestment."""
+    def mark_external_sales_used(self, amount: float, portfolio_name: str = "SP400") -> None:
+        """Mark external sales as used for reinvestment for a specific portfolio."""
         external_sales_ref = self.db.collection('external_sales')
-        docs = external_sales_ref.where('used_for_reinvestment', '==', False).stream()
+        docs = external_sales_ref.where('used_for_reinvestment', '==', False).where('portfolio_name', '==', portfolio_name).stream()
         
         remaining = amount
         for doc in docs:
@@ -345,19 +396,22 @@ class PersistenceManager:
         if not broker_trades:
             return {'updated': 0, 'missing': 0, 'unfilled': 0}
         
-        # Get all Firestore trades from recent period
+        # Get all Firestore trades from recent period for this portfolio
         trades_ref = self.db.collection('trades')
         # Get trades from last 7 days (adjust as needed)
         cutoff_date = datetime.now() - timedelta(days=7)
         
         db_trades = {}
         db_trades_by_id = {}
+        # Note: reconcile_with_broker_history doesn't have portfolio_name parameter yet
+        # For now, filter by portfolio_name if provided in broker_trades
         for doc in trades_ref.where('timestamp', '>=', cutoff_date).stream():
             data = doc.to_dict()
             trade_id = data.get('trade_id')
             symbol = data.get('symbol', '').upper()
             action = data.get('action', '').upper()
             timestamp = data.get('timestamp')
+            doc_portfolio = data.get('portfolio_name', 'SP400')
             
             # Create key for matching
             key = f"{symbol}_{action}_{timestamp}"

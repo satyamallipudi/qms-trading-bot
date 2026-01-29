@@ -41,19 +41,24 @@ class SESNotifier(EmailNotifier):
     def send_trade_summary(
         self,
         recipient: str,
-        trade_summary: TradeSummary,
-        leaderboard_symbols: List[str],
+        trade_summary,
+        leaderboard_symbols: Optional[List[str]] = None,
+        portfolio_leaderboards: Optional[Dict[str, List[str]]] = None,
     ) -> bool:
         """Send trade summary email via AWS SES."""
         try:
-            html_content = self._format_trade_summary_html(trade_summary, leaderboard_symbols)
-            text_content = self._format_trade_summary_text(trade_summary, leaderboard_symbols)
+            html_content = self._format_trade_summary_html(trade_summary, leaderboard_symbols, portfolio_leaderboards)
+            text_content = self._format_trade_summary_text(trade_summary, leaderboard_symbols, portfolio_leaderboards)
+            
+            subject = "Portfolio Rebalancing Summary"
+            if isinstance(trade_summary, MultiPortfolioSummary):
+                subject = "Multi-Portfolio Rebalancing Summary"
             
             response = self.ses_client.send_email(
                 Source=self.from_email,
                 Destination={"ToAddresses": [recipient]},
                 Message={
-                    "Subject": {"Data": "Portfolio Rebalancing Summary", "Charset": "UTF-8"},
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
                     "Body": {
                         "Text": {"Data": text_content, "Charset": "UTF-8"},
                         "Html": {"Data": html_content, "Charset": "UTF-8"},

@@ -1,7 +1,7 @@
 """Data models for broker positions and allocations."""
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Dict, Optional
 
 
 @dataclass
@@ -34,3 +34,33 @@ class TradeSummary:
     total_proceeds: float
     final_allocations: List[Allocation]
     portfolio_value: float
+    portfolio_name: str = "SP400"  # Default for backward compatibility
+    initial_capital: float = 0.0  # Track initial capital for performance calculation
+
+
+@dataclass
+class PortfolioPerformance:
+    """Performance metrics for a single portfolio."""
+    
+    portfolio_name: str
+    initial_capital: float
+    current_value: float
+    total_return: float  # Absolute return (current - initial)
+    total_return_pct: float  # Percentage return ((current - initial) / initial * 100)
+    total_cost: float  # Total cost of all buys
+    total_proceeds: float  # Total proceeds from all sells
+    net_invested: float  # Net capital invested (cost - proceeds)
+    unrealized_pnl: float  # Unrealized profit/loss (current_value - net_invested)
+    realized_pnl: float  # Realized profit/loss from sells
+
+
+@dataclass
+class MultiPortfolioSummary:
+    """Summary of trades and performance across multiple portfolios."""
+    
+    portfolios: Dict[str, TradeSummary]  # Key: portfolio_name, Value: TradeSummary
+    performances: Dict[str, PortfolioPerformance]  # Key: portfolio_name, Value: PortfolioPerformance
+    total_initial_capital: float
+    total_current_value: float
+    overall_return: float
+    overall_return_pct: float
