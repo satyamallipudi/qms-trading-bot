@@ -272,30 +272,30 @@ class EmailNotifier(ABC):
                         <th>Failed Trades</th>
                     </tr>
             """
+        
+        # Calculate trade status summary
+        for portfolio_name, summary in multi_summary.portfolios.items():
+            submitted_sells_count = len([s for s in summary.sells if s.get('status') == 'submitted'])
+            submitted_buys_count = len([b for b in summary.buys if b.get('status') == 'submitted'])
+            failed_count = len(summary.failed_trades) if summary.failed_trades else 0
             
-            # Calculate trade status summary
-            for portfolio_name, summary in multi_summary.portfolios.items():
-                submitted_sells_count = len([s for s in summary.sells if s.get('status') == 'submitted'])
-                submitted_buys_count = len([b for b in summary.buys if b.get('status') == 'submitted'])
-                failed_count = len(summary.failed_trades) if summary.failed_trades else 0
-                
-                failed_class = "negative" if failed_count > 0 else ""
-                
-                html += f"""
+            failed_class = "negative" if failed_count > 0 else ""
+            
+            html += f"""
                     <tr>
                         <td><strong>{portfolio_name}</strong></td>
                         <td>{submitted_sells_count}</td>
                         <td>{submitted_buys_count}</td>
                         <td class="{failed_class}">{failed_count}</td>
                     </tr>
-                """
-            
-            html += """
+            """
+        
+        html += """
                 </table>
             </div>
             """
-            
-            if pre_trade_performance:
+        
+        if pre_trade_performance:
                 html += """
             <h3>Portfolio Performance Summary (Current Holdings)</h3>
             <table>
