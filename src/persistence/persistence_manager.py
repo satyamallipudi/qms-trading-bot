@@ -2,9 +2,12 @@
 
 import os
 import json
+import logging
 from datetime import datetime, timedelta, timedelta
 from typing import Dict, List, Optional, Set, Union
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 try:
     import firebase_admin

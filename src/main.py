@@ -296,7 +296,7 @@ class TradingBot:
                         ownership_records = self.persistence_manager.get_portfolio_ownership_records(portfolio_name)
                     
                     # Create a TradeSummary with current holdings (no trades yet)
-                    from ..broker.models import TradeSummary
+                    from .broker.models import TradeSummary
                     pre_trade_summary = TradeSummary(
                         buys=[],
                         sells=[],

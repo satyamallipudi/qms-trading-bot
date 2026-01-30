@@ -171,6 +171,7 @@ class Rebalancer:
             dry_run: If True, print actions but don't execute trades.
         """
         buys = []
+        failed_trades = []  # Track failed trades
         allocation_amount = amount if amount is not None else self.initial_capital
         # Round to 2 decimal places (Alpaca requires notional values to be limited to 2 decimal places)
         allocation_per_stock = round(allocation_amount / len(symbols), 2)
@@ -186,16 +187,30 @@ class Rebalancer:
                     "symbol": symbol,
                     "quantity": 0,  # Will be estimated
                     "cost": allocation_per_stock,
+                    "status": "planned",
+                    "error": None,
+                    "order_id": None,
                 })
                 logger.info(f"[{self.portfolio_name}] [DRY-RUN] Would buy ${allocation_per_stock} of {symbol}")
             else:
                 try:
                     success = self.broker.buy(symbol, allocation_per_stock)
+                    # Try to get order ID if broker supports it
+                    order_id = None
+                    try:
+                        if hasattr(self.broker, '_last_order_id'):
+                            order_id = getattr(self.broker, '_last_order_id', None)
+                    except:
+                        pass
+                    
                     if success:
                         buys.append({
                             "symbol": symbol,
                             "quantity": 0,  # Will be updated after getting positions
                             "cost": allocation_per_stock,
+                            "status": "submitted",
+                            "error": None,
+                            "order_id": order_id,
                         })
                         logger.info(f"[{self.portfolio_name}] Bought ${allocation_per_stock} of {symbol}")
                         
@@ -223,9 +238,41 @@ class Rebalancer:
                             )
                             self.persistence_manager.record_trade(trade)
                     else:
+                        error_msg = f"Broker rejected buy order for {symbol}"
                         logger.warning(f"Failed to buy {symbol}")
+                        failed_trades.append({
+                            "symbol": symbol,
+                            "action": "BUY",
+                            "quantity": 0.0,
+                            "cost": allocation_per_stock,
+                            "error": error_msg,
+                        })
+                        buys.append({
+                            "symbol": symbol,
+                            "quantity": 0,
+                            "cost": allocation_per_stock,
+                            "status": "failed",
+                            "error": error_msg,
+                            "order_id": None,
+                        })
                 except Exception as e:
-                    logger.error(f"Error buying {symbol}: {e}")
+                    error_msg = f"Error buying {symbol}: {str(e)}"
+                    logger.error(error_msg)
+                    failed_trades.append({
+                        "symbol": symbol,
+                        "action": "BUY",
+                        "quantity": 0.0,
+                        "cost": allocation_per_stock,
+                        "error": error_msg,
+                    })
+                    buys.append({
+                        "symbol": symbol,
+                        "quantity": 0,
+                        "cost": allocation_per_stock,
+                        "status": "failed",
+                        "error": error_msg,
+                        "order_id": None,
+                    })
         
         # Get updated allocations (or current if dry-run)
         try:
@@ -256,7 +303,7 @@ class Rebalancer:
             logger.error(f"Error getting final allocations: {e}")
             final_allocations = []
         
-        return self._create_summary(buys, [], final_allocations, failed_trades=[])
+        return self._create_summary(buys, [], final_allocations, failed_trades=failed_trades)
     
     def _execute_week_over_week_rebalancing(
         self,
