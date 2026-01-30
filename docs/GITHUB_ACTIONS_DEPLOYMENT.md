@@ -71,7 +71,7 @@ GitHub Actions can trigger your bot on a schedule (e.g., weekly) using the **ext
   - `SMTP_HOST` - e.g., `smtp.gmail.com` (can be variable)
   - `SMTP_PORT` - e.g., `587` (can be variable)
   - `SMTP_USERNAME` - Your email username
-  - `SMTP_PASSWORD` - Your email app password
+  - `SMTP_PASSWORD` - Your email app password See [Gmail App Password Guide](GMAIL_APP_PASSWORD_SETUP.md)
   - `SMTP_FROM_EMAIL` - From email address
   
   **SendGrid Configuration (🔒 Secrets - required if EMAIL_PROVIDER=sendgrid):**
