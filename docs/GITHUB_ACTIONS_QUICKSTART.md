@@ -36,6 +36,14 @@ Get your QMS Trading Bot running on GitHub Actions in 5 minutes!
    Name: ALPACA_API_SECRET
    Value: your_alpaca_secret
    
+   Name: FIREBASE_PROJECT_ID (optional - for persistence but needed for trading multiple portfolios)
+   Value: your-firebase-project-id
+   
+   Name: FIREBASE_CREDENTIALS_JSON (optional - for persistence but needed for trading multiple portfolios)
+   Value: {"type":"service_account","project_id":"...","private_key":"..."}
+   ```
+   **If you want summary emails sent to you after trades execute.**
+   ```
    Name: EMAIL_RECIPIENT (optional)
    Value: your_email@example.com
    
@@ -47,12 +55,6 @@ Get your QMS Trading Bot running on GitHub Actions in 5 minutes!
    
    Name: SMTP_FROM_EMAIL (optional)
    Value: your_gmail@gmail.com
-   
-   Name: FIREBASE_PROJECT_ID (optional - for persistence)
-   Value: your-firebase-project-id
-   
-   Name: FIREBASE_CREDENTIALS_JSON (optional - for persistence)
-   Value: {"type":"service_account","project_id":"...","private_key":"..."}
    ```
    
    > 💡 **For FIREBASE_CREDENTIALS_JSON:** Copy the entire content of your Firebase service account JSON file. GitHub handles multi-line secrets automatically.
