@@ -644,11 +644,8 @@ class PersistenceManager:
                     doc_ref = trades_ref.document(doc_id)
                     doc_ref.update(update_data)
                     
-                    # Update ownership if quantity changed
-                    if db_data.get('action') == 'BUY' or db_data.get('action') == 'SELL':
-                        # Recalculate ownership - this is complex, so we'll just log it
-                        # In production, you might want to recalculate ownership from all trades
-                        pass
+                    # Note: Ownership will be recalculated after reconciliation completes
+                    # See recalculate_ownership_from_trades() method
                     
                     updated_count += 1
                 
@@ -700,6 +697,29 @@ class PersistenceManager:
                                 'reconciled_at': datetime.now(),
                             })
                             unfilled_count += 1
+        
+        # After reconciliation, recalculate ownership records from all trade records
+        # This ensures ownership reflects actual fill prices and quantities
+        if updated_count > 0:
+            try:
+                # Get all portfolios that had trades updated
+                portfolios_to_recalculate = set()
+                for db_trade in db_trades.values():
+                    if db_trade.get('matched'):
+                        db_data = db_trade['data']
+                        portfolio_name = db_data.get('portfolio_name')
+                        if portfolio_name:
+                            portfolios_to_recalculate.add(portfolio_name)
+                
+                # Recalculate ownership for each affected portfolio
+                for portfolio_name in portfolios_to_recalculate:
+                    try:
+                        self.recalculate_ownership_from_trades(portfolio_name)
+                        logger.info(f"Recalculated ownership records for {portfolio_name} after reconciliation")
+                    except Exception as e:
+                        logger.warning(f"Error recalculating ownership for {portfolio_name}: {e}")
+            except Exception as e:
+                logger.warning(f"Error recalculating ownership after reconciliation: {e}")
         
         return {
             'updated': updated_count,
@@ -799,4 +819,143 @@ class PersistenceManager:
         return {
             'updated': updated_count,
             'fixed': fixed_count
+        }
+    
+    def recalculate_ownership_from_trades(self, portfolio_name: str) -> dict:
+        """
+        Recalculate ownership records from all trade records for a portfolio.
+        
+        This ensures ownership reflects actual fill prices and quantities after reconciliation.
+        
+        Args:
+            portfolio_name: Portfolio name to recalculate
+            
+        Returns:
+            Dictionary with recalculation results:
+            {
+                'updated': int,  # Number of ownership records updated
+                'recalculated': int  # Number of symbols recalculated
+            }
+        """
+        # Get all trade records for this portfolio
+        trades_ref = self.db.collection('trades')
+        if FieldFilter:
+            trades_query = trades_ref.where(filter=FieldFilter('portfolio_name', '==', portfolio_name))
+        else:
+            trades_query = trades_ref.where('portfolio_name', '==', portfolio_name)
+        
+        trades = trades_query.stream()
+        
+        # Aggregate trades by symbol
+        symbol_trades = {}
+        for trade_doc in trades:
+            trade_data = trade_doc.to_dict()
+            symbol = trade_data.get('symbol', '').upper()
+            action = trade_data.get('action', '').upper()
+            quantity = trade_data.get('quantity', 0.0)
+            price = trade_data.get('price', 0.0)
+            total = trade_data.get('total', 0.0)
+            
+            # Only use trades with valid fill data
+            if quantity <= 0 or price <= 0 or total <= 0:
+                continue
+            
+            if symbol not in symbol_trades:
+                symbol_trades[symbol] = {
+                    'buys': [],
+                    'sells': [],
+                }
+            
+            if action == 'BUY':
+                symbol_trades[symbol]['buys'].append({
+                    'quantity': quantity,
+                    'price': price,
+                    'total': total,
+                })
+            elif action == 'SELL':
+                symbol_trades[symbol]['sells'].append({
+                    'quantity': quantity,
+                    'price': price,
+                    'total': total,
+                })
+        
+        # Recalculate ownership for each symbol
+        updated_count = 0
+        recalculated_count = 0
+        
+        for symbol, trades_data in symbol_trades.items():
+            # Calculate net quantity and total cost
+            total_buy_quantity = sum(buy['quantity'] for buy in trades_data['buys'])
+            total_buy_cost = sum(buy['total'] for buy in trades_data['buys'])
+            total_sell_quantity = sum(sell['quantity'] for sell in trades_data['sells'])
+            
+            # Net quantity owned
+            net_quantity = total_buy_quantity - total_sell_quantity
+            
+            # Calculate cost basis (FIFO: reduce cost basis proportionally when selling)
+            # For simplicity, we'll use average cost basis
+            # If we've sold some shares, reduce cost basis proportionally
+            if total_buy_quantity > 0:
+                cost_basis = total_buy_cost * (net_quantity / total_buy_quantity) if net_quantity > 0 else 0.0
+            else:
+                cost_basis = 0.0
+            
+            # Update or create ownership record
+            doc_id = f"{portfolio_name}_{symbol}"
+            ownership_ref = self.db.collection('ownership').document(doc_id)
+            ownership_doc = ownership_ref.get()
+            
+            if net_quantity > 0:
+                # We own shares - update ownership record
+                avg_price = cost_basis / net_quantity if net_quantity > 0 else 0.0
+                
+                if ownership_doc.exists:
+                    # Update existing record
+                    ownership_ref.update({
+                        'quantity': net_quantity,
+                        'total_cost': cost_basis,
+                        'last_updated': datetime.now(),
+                    })
+                else:
+                    # Create new record
+                    # Get first and last purchase dates from trades
+                    first_purchase_date = datetime.now()
+                    last_purchase_date = datetime.now()
+                    if trades_data['buys']:
+                        # Get timestamps from trade records
+                        buy_trades = trades_ref.where('portfolio_name', '==', portfolio_name).where('symbol', '==', symbol).where('action', '==', 'BUY').order_by('timestamp').stream()
+                        buy_timestamps = []
+                        for doc in buy_trades:
+                            ts = doc.to_dict().get('timestamp')
+                            if ts:
+                                if hasattr(ts, 'timestamp'):
+                                    buy_timestamps.append(datetime.fromtimestamp(ts.timestamp()))
+                                elif isinstance(ts, datetime):
+                                    buy_timestamps.append(ts)
+                        
+                        if buy_timestamps:
+                            first_purchase_date = min(buy_timestamps)
+                            last_purchase_date = max(buy_timestamps)
+                    
+                    ownership_ref.set({
+                        'symbol': symbol,
+                        'portfolio_name': portfolio_name,
+                        'quantity': net_quantity,
+                        'total_cost': cost_basis,
+                        'first_purchase_date': first_purchase_date,
+                        'last_purchase_date': last_purchase_date,
+                        'last_updated': datetime.now(),
+                    })
+                
+                updated_count += 1
+                recalculated_count += 1
+            else:
+                # We don't own any shares - delete ownership record if it exists
+                if ownership_doc.exists:
+                    ownership_ref.delete()
+                    updated_count += 1
+        
+        return {
+            'updated': updated_count,
+            'recalculated': recalculated_count
         }
