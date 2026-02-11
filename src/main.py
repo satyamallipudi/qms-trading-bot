@@ -439,7 +439,36 @@ class TradingBot:
                     if self.execution_tracker and execution_run_id and not dry_run:
                         self.execution_tracker.fail_run(execution_run_id, str(portfolio_error))
                     # Continue with other portfolios
-            
+
+            # STEP 5: Wait for all trades to reach terminal state before sending email
+            if not dry_run and self.trade_status_checker and portfolio_summaries:
+                # Check if any portfolios have submitted trades
+                portfolios_with_trades = [
+                    name for name, summary in portfolio_summaries.items()
+                    if summary.buys or summary.sells
+                ]
+                if portfolios_with_trades:
+                    logger.info("=" * 60)
+                    logger.info("STEP 5: Waiting for all trades to fill...")
+                    logger.info("=" * 60)
+                    fill_results = self.trade_status_checker.wait_for_all_fills(
+                        portfolios_with_trades,
+                    )
+
+                    # Update execution run counts with final fill results
+                    if self.execution_tracker:
+                        for name, result in fill_results.items():
+                            run_id = execution_run_ids.get(name)
+                            if run_id:
+                                run = self.execution_tracker.get_today_run(name)
+                                if run:
+                                    self.execution_tracker.update_trade_counts(
+                                        run_id,
+                                        trades_filled=run.get('trades_filled', 0) + result.filled,
+                                        trades_failed=run.get('trades_failed', 0) + result.failed,
+                                        trades_submitted=result.still_pending,
+                                    )
+
             # Fetch ownership records for each portfolio (if persistence enabled) - needed for net_invested calculation
             portfolio_ownership = {}
             if self.persistence_manager:

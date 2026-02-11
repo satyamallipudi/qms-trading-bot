@@ -1,6 +1,7 @@
 """Trade status checking for submitted orders."""
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
@@ -217,3 +218,68 @@ class TradeStatusChecker:
             'filled': run.get('trades_filled', 0),
             'failed': run.get('trades_failed', 0),
         }
+
+    def wait_for_all_fills(
+        self,
+        portfolio_names: List[str],
+        poll_interval: int = 5,
+        max_wait: int = 300,
+    ) -> Dict[str, TradeCheckResult]:
+        """
+        Poll broker until all submitted trades reach terminal state or timeout.
+
+        Args:
+            portfolio_names: List of portfolio names to check
+            poll_interval: Seconds between polls (default 5)
+            max_wait: Max seconds to wait (default 300)
+
+        Returns:
+            Dict of portfolio_name -> TradeCheckResult
+        """
+        elapsed = 0
+        results: Dict[str, TradeCheckResult] = {}
+
+        logger.info(
+            f"Waiting for trades to fill across {len(portfolio_names)} portfolio(s) "
+            f"(poll every {poll_interval}s, timeout {max_wait}s)..."
+        )
+
+        while elapsed < max_wait:
+            all_terminal = True
+            results.clear()
+
+            for name in portfolio_names:
+                result = self.check_submitted_trades(name)
+                results[name] = result
+                if result.still_pending > 0:
+                    all_terminal = False
+
+            if all_terminal:
+                logger.info("All trades reached terminal state")
+                return results
+
+            logger.info(
+                f"Still waiting for fills ({elapsed}s elapsed) - "
+                + ", ".join(
+                    f"{name}: {r.still_pending} pending"
+                    for name, r in results.items()
+                    if r.still_pending > 0
+                )
+            )
+
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        # Timeout reached - do one final check
+        logger.warning(f"Timeout reached ({max_wait}s). Performing final check...")
+        results.clear()
+        for name in portfolio_names:
+            results[name] = self.check_submitted_trades(name)
+
+        total_pending = sum(r.still_pending for r in results.values())
+        if total_pending > 0:
+            logger.warning(f"{total_pending} trade(s) still pending after timeout")
+        else:
+            logger.info("All trades reached terminal state on final check")
+
+        return results

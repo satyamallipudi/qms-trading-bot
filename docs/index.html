@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QMS Trading Bot Setup</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --success: #16a34a;
+            --warning: #ca8a04;
+            --danger: #dc2626;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-800);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: var(--gray-900);
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--gray-600);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: var(--gray-100);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .card-header h2 {
+            font-size: 1.1rem;
+            color: var(--gray-800);
+        }
+
+        .card-header .badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .badge-required {
+            background: #fef2f2;
+            color: var(--danger);
+        }
+
+        .badge-optional {
+            background: #f0fdf4;
+            color: var(--success);
+        }
+
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--gray-700);
+        }
+
+        label .hint {
+            font-weight: 400;
+            color: var(--gray-600);
+            font-size: 0.875rem;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 0.5rem;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .btn-secondary:hover {
+            background: var(--gray-300);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .output-section {
+            display: none;
+        }
+
+        .output-section.visible {
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--gray-200);
+            margin-bottom: 1rem;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 0.95rem;
+            color: var(--gray-600);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        pre {
+            background: var(--gray-900);
+            color: #e5e7eb;
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            padding: 0.5rem;
+            background: var(--gray-700);
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+
+        .copy-btn:hover {
+            background: var(--gray-600);
+        }
+
+        .code-block {
+            position: relative;
+        }
+
+        .success-msg {
+            color: var(--success);
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: #1e40af;
+        }
+
+        .warning-box {
+            background: #fefce8;
+            border: 1px solid #fde047;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: #854d0e;
+        }
+
+        .collapse-toggle {
+            background: none;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .mode-toggle {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--gray-200);
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .radio-label:has(input:checked) {
+            border-color: var(--primary);
+            background: #eff6ff;
+        }
+
+        .radio-label input[type="radio"] {
+            margin-right: 0.5rem;
+        }
+
+        .radio-text {
+            font-weight: 500;
+        }
+
+        .portfolio-card {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+
+        .portfolio-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .portfolio-card-header h4 {
+            margin: 0;
+            color: var(--gray-700);
+            font-size: 0.95rem;
+        }
+
+        .remove-portfolio-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            cursor: pointer;
+            font-size: 1.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            line-height: 1;
+        }
+
+        .remove-portfolio-btn:hover {
+            background: #fef2f2;
+        }
+
+        .portfolio-card .form-row {
+            margin-bottom: 0.75rem;
+        }
+
+        .portfolio-card .form-group {
+            margin-bottom: 0.75rem;
+        }
+
+        .portfolio-card .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .portfolio-card label {
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .portfolio-card input,
+        .portfolio-card select {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>QMS Trading Bot Setup</h1>
+            <p class="subtitle">Configure your GitHub Actions secrets and variables</p>
+        </header>
+
+        <div class="info-box">
+            <strong>How it works:</strong> Fill in your configuration below, then use the generated commands to set up your GitHub repository. Sensitive values (API keys, passwords) become <strong>Secrets</strong>, non-sensitive values become <strong>Variables</strong>.
+        </div>
+
+        <form id="setupForm">
+            <!-- Leaderboard API -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Leaderboard API</h2>
+                    <span class="badge badge-required">Required</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>API URL</label>
+                        <input type="url" name="LEADERBOARD_API_URL" placeholder="https://api.example.com/leaderboard" required>
+                    </div>
+                    <div class="form-group">
+                        <label>API Token <span class="hint">(Secret)</span></label>
+                        <input type="password" name="LEADERBOARD_API_TOKEN" placeholder="Your API token" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Broker Configuration -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Broker Configuration</h2>
+                    <span class="badge badge-required">Required</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Broker Type</label>
+                        <select name="BROKER_TYPE" id="brokerType">
+                            <option value="alpaca">Alpaca</option>
+                            <option value="robinhood">Robinhood</option>
+                            <option value="webull">Webull</option>
+                        </select>
+                    </div>
+
+                    <!-- Alpaca -->
+                    <div id="alpacaFields">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Alpaca API Key <span class="hint">(Secret)</span></label>
+                                <input type="password" name="ALPACA_API_KEY" placeholder="PK...">
+                            </div>
+                            <div class="form-group">
+                                <label>Alpaca API Secret <span class="hint">(Secret)</span></label>
+                                <input type="password" name="ALPACA_API_SECRET" placeholder="Your secret key">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Alpaca Base URL</label>
+                            <select name="ALPACA_BASE_URL">
+                                <option value="https://paper-api.alpaca.markets">Paper Trading (Sandbox)</option>
+                                <option value="https://api.alpaca.markets">Live Trading</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Robinhood -->
+                    <div id="robinhoodFields" class="hidden">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Robinhood Username <span class="hint">(Secret)</span></label>
+                                <input type="text" name="ROBINHOOD_USERNAME" placeholder="username">
+                            </div>
+                            <div class="form-group">
+                                <label>Robinhood Password <span class="hint">(Secret)</span></label>
+                                <input type="password" name="ROBINHOOD_PASSWORD" placeholder="password">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Webull -->
+                    <div id="webullFields" class="hidden">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Webull App Key <span class="hint">(Secret)</span></label>
+                                <input type="password" name="WEBULL_APP_KEY" placeholder="App key">
+                            </div>
+                            <div class="form-group">
+                                <label>Webull App Secret <span class="hint">(Secret)</span></label>
+                                <input type="password" name="WEBULL_APP_SECRET" placeholder="App secret">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trading Configuration -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Trading Configuration</h2>
+                    <span class="badge badge-required">Required</span>
+                </div>
+                <div class="card-body">
+                    <!-- Portfolio Mode Selection -->
+                    <div class="form-group">
+                        <label>Portfolio Mode</label>
+                        <div class="mode-toggle">
+                            <label class="radio-label">
+                                <input type="radio" name="portfolioMode" value="single" checked>
+                                <span class="radio-text">Single Portfolio</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="portfolioMode" value="multiple">
+                                <span class="radio-text">Multiple Portfolios</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Single Portfolio Mode -->
+                    <div id="singlePortfolioFields">
+                        <div class="form-group">
+                            <label>Portfolio Index</label>
+                            <select name="TRADE_INDEX_SINGLE">
+                                <option value="SP400">S&P 400 (MidCap)</option>
+                                <option value="SP500">S&P 500 (LargeCap)</option>
+                                <option value="SP600">S&P 600 (SmallCap)</option>
+                                <option value="NDX">NASDAQ 100</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Initial Capital</label>
+                                <input type="number" name="INITIAL_CAPITAL_SINGLE" value="10000" step="100" min="100">
+                            </div>
+                            <div class="form-group">
+                                <label>Stock Count <span class="hint">(how many stocks to hold)</span></label>
+                                <input type="number" name="STOCKCOUNT_SINGLE" value="5" min="1" max="100">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Slack <span class="hint">(rank threshold before selling, default: stockcount)</span></label>
+                            <input type="number" name="SLACK_SINGLE" placeholder="Same as stock count" min="0" max="100">
+                        </div>
+                    </div>
+
+                    <!-- Multiple Portfolios Mode -->
+                    <div id="multiplePortfolioFields" class="hidden">
+                        <div class="info-box" style="margin-bottom: 1rem;">
+                            Configure multiple portfolios to trade different indices with separate capital allocations.
+                        </div>
+
+                        <div id="portfolioList">
+                            <!-- Portfolios will be added here dynamically -->
+                        </div>
+
+                        <button type="button" class="btn btn-secondary" onclick="addPortfolio()" style="margin-top: 0.5rem;">
+                            + Add Portfolio
+                        </button>
+                    </div>
+
+                    <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--gray-200);">
+
+                    <div class="form-group">
+                        <label>Force Run <span class="hint">(for manual triggers)</span></label>
+                        <select name="FORCE_RUN">
+                            <option value="false">Dry Run (default)</option>
+                            <option value="true">Execute Trades</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Email Configuration -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Email Notifications</h2>
+                    <span class="badge badge-optional">Optional</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="EMAIL_ENABLED" id="emailEnabled">
+                            Enable email notifications
+                        </label>
+                    </div>
+
+                    <div id="emailFields" class="hidden">
+                        <div class="form-group">
+                            <label>Email Provider</label>
+                            <select name="EMAIL_PROVIDER" id="emailProvider">
+                                <option value="smtp">SMTP (Gmail, etc.)</option>
+                                <option value="sendgrid">SendGrid</option>
+                                <option value="ses">AWS SES</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Recipient Email <span class="hint">(Secret)</span></label>
+                            <input type="email" name="EMAIL_RECIPIENT" placeholder="you@example.com">
+                        </div>
+
+                        <!-- SMTP Fields -->
+                        <div id="smtpFields">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>SMTP Host</label>
+                                    <input type="text" name="SMTP_HOST" value="smtp.gmail.com" placeholder="smtp.gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>SMTP Port</label>
+                                    <input type="number" name="SMTP_PORT" value="587">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>SMTP Username <span class="hint">(Secret)</span></label>
+                                    <input type="text" name="SMTP_USERNAME" placeholder="your@gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>SMTP Password <span class="hint">(Secret - App Password)</span></label>
+                                    <input type="password" name="SMTP_PASSWORD" placeholder="App password">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>From Email <span class="hint">(Secret)</span></label>
+                                <input type="email" name="SMTP_FROM_EMAIL" placeholder="your@gmail.com">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Firebase/Persistence -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Persistence (Firebase)</h2>
+                    <span class="badge badge-optional">Optional</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="PERSISTENCE_ENABLED" id="persistenceEnabled">
+                            Enable trade persistence (Firebase Firestore)
+                        </label>
+                    </div>
+
+                    <div id="firebaseFields" class="hidden">
+                        <div class="form-group">
+                            <label>Firebase Project ID <span class="hint">(Secret)</span></label>
+                            <input type="text" name="FIREBASE_PROJECT_ID" placeholder="your-project-id">
+                        </div>
+                        <div class="form-group">
+                            <label>Firebase Credentials JSON <span class="hint">(Secret - entire JSON file content)</span></label>
+                            <textarea name="FIREBASE_CREDENTIALS_JSON" rows="4" placeholder='{"type": "service_account", ...}'></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Repository Info -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>GitHub Repository</h2>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Repository <span class="hint">(owner/repo format)</span></label>
+                        <input type="text" name="GITHUB_REPO" id="githubRepo" placeholder="username/qms-trading-bot" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">Generate Setup Commands</button>
+                <button type="button" class="btn btn-secondary" onclick="downloadEnvFile()">Download .env File</button>
+            </div>
+        </form>
+
+        <!-- Output Section -->
+        <div id="outputSection" class="output-section">
+            <div class="card" style="margin-top: 2rem;">
+                <div class="card-header">
+                    <h2>Setup Commands</h2>
+                </div>
+                <div class="card-body">
+                    <div class="warning-box">
+                        <strong>Important:</strong> Run these commands in your terminal. Make sure you have the <a href="https://cli.github.com/" target="_blank">GitHub CLI (gh)</a> installed and authenticated.
+                    </div>
+
+                    <div class="tabs">
+                        <button type="button" class="tab active" data-tab="secrets">Secrets</button>
+                        <button type="button" class="tab" data-tab="variables">Variables</button>
+                        <button type="button" class="tab" data-tab="all">All Commands</button>
+                    </div>
+
+                    <div id="secretsTab" class="tab-content active">
+                        <div class="code-block">
+                            <button class="copy-btn" onclick="copyCode('secretsCode')">Copy</button>
+                            <pre id="secretsCode"></pre>
+                        </div>
+                    </div>
+
+                    <div id="variablesTab" class="tab-content">
+                        <div class="code-block">
+                            <button class="copy-btn" onclick="copyCode('variablesCode')">Copy</button>
+                            <pre id="variablesCode"></pre>
+                        </div>
+                    </div>
+
+                    <div id="allTab" class="tab-content">
+                        <div class="code-block">
+                            <button class="copy-btn" onclick="copyCode('allCode')">Copy</button>
+                            <pre id="allCode"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Portfolio counter for unique IDs
+        let portfolioCounter = 0;
+
+        // Broker type switching
+        document.getElementById('brokerType').addEventListener('change', function() {
+            document.getElementById('alpacaFields').classList.add('hidden');
+            document.getElementById('robinhoodFields').classList.add('hidden');
+            document.getElementById('webullFields').classList.add('hidden');
+            document.getElementById(this.value + 'Fields').classList.remove('hidden');
+        });
+
+        // Portfolio mode switching
+        document.querySelectorAll('input[name="portfolioMode"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const isSingle = this.value === 'single';
+                document.getElementById('singlePortfolioFields').classList.toggle('hidden', !isSingle);
+                document.getElementById('multiplePortfolioFields').classList.toggle('hidden', isSingle);
+
+                // Add initial portfolio if switching to multiple and list is empty
+                if (!isSingle && document.getElementById('portfolioList').children.length === 0) {
+                    addPortfolio();
+                }
+            });
+        });
+
+        // Add portfolio card
+        function addPortfolio(defaults = {}) {
+            const portfolioList = document.getElementById('portfolioList');
+            const portfolioId = ++portfolioCounter;
+
+            const card = document.createElement('div');
+            card.className = 'portfolio-card';
+            card.id = `portfolio-${portfolioId}`;
+            card.innerHTML = `
+                <div class="portfolio-card-header">
+                    <h4>Portfolio #${portfolioId}</h4>
+                    <button type="button" class="remove-portfolio-btn" onclick="removePortfolio(${portfolioId})" title="Remove portfolio">&times;</button>
+                </div>
+                <div class="form-group">
+                    <label>Index</label>
+                    <select name="portfolio_${portfolioId}_index">
+                        <option value="SP400" ${defaults.index === 'SP400' ? 'selected' : ''}>S&P 400 (MidCap)</option>
+                        <option value="SP500" ${defaults.index === 'SP500' ? 'selected' : ''}>S&P 500 (LargeCap)</option>
+                        <option value="SP600" ${defaults.index === 'SP600' ? 'selected' : ''}>S&P 600 (SmallCap)</option>
+                        <option value="NDX" ${defaults.index === 'NDX' ? 'selected' : ''}>NASDAQ 100</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Initial Capital</label>
+                        <input type="number" name="portfolio_${portfolioId}_capital" value="${defaults.capital || 10000}" step="100" min="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Stock Count</label>
+                        <input type="number" name="portfolio_${portfolioId}_stockcount" value="${defaults.stockcount || 5}" min="1" max="100">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Slack <span class="hint">(optional, defaults to stock count)</span></label>
+                    <input type="number" name="portfolio_${portfolioId}_slack" placeholder="Same as stock count" min="0" max="100" value="${defaults.slack || ''}">
+                </div>
+            `;
+            portfolioList.appendChild(card);
+            updateRemoveButtons();
+        }
+
+        // Remove portfolio card
+        function removePortfolio(id) {
+            const card = document.getElementById(`portfolio-${id}`);
+            if (card) {
+                card.remove();
+                updateRemoveButtons();
+            }
+        }
+
+        // Update remove buttons visibility (hide if only one portfolio)
+        function updateRemoveButtons() {
+            const cards = document.querySelectorAll('.portfolio-card');
+            cards.forEach(card => {
+                const btn = card.querySelector('.remove-portfolio-btn');
+                btn.style.display = cards.length > 1 ? 'block' : 'none';
+            });
+        }
+
+        // Get all portfolios data
+        function getPortfoliosData() {
+            const portfolios = [];
+            const cards = document.querySelectorAll('.portfolio-card');
+
+            cards.forEach(card => {
+                const id = card.id.replace('portfolio-', '');
+                const index = card.querySelector(`[name="portfolio_${id}_index"]`).value;
+                const capital = card.querySelector(`[name="portfolio_${id}_capital"]`).value;
+                const stockcount = card.querySelector(`[name="portfolio_${id}_stockcount"]`).value;
+                const slack = card.querySelector(`[name="portfolio_${id}_slack"]`).value;
+
+                portfolios.push({
+                    portfolio_name: index,
+                    initial_capital: parseFloat(capital) || 10000,
+                    stockcount: parseInt(stockcount) || 5,
+                    slack: slack ? parseInt(slack) : null,
+                    enabled: true
+                });
+            });
+
+            return portfolios;
+        }
+
+        // Email toggle
+        document.getElementById('emailEnabled').addEventListener('change', function() {
+            document.getElementById('emailFields').classList.toggle('hidden', !this.checked);
+        });
+
+        // Persistence toggle
+        document.getElementById('persistenceEnabled').addEventListener('change', function() {
+            document.getElementById('firebaseFields').classList.toggle('hidden', !this.checked);
+        });
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById(this.dataset.tab + 'Tab').classList.add('active');
+            });
+        });
+
+        // Form submission
+        document.getElementById('setupForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            generateCommands();
+        });
+
+        function generateCommands() {
+            const form = document.getElementById('setupForm');
+            const formData = new FormData(form);
+            const repo = formData.get('GITHUB_REPO');
+            const isSingleMode = formData.get('portfolioMode') === 'single';
+
+            // Define which fields are secrets vs variables
+            const secrets = [
+                'LEADERBOARD_API_TOKEN',
+                'ALPACA_API_KEY', 'ALPACA_API_SECRET',
+                'ROBINHOOD_USERNAME', 'ROBINHOOD_PASSWORD',
+                'WEBULL_APP_KEY', 'WEBULL_APP_SECRET',
+                'EMAIL_RECIPIENT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM_EMAIL',
+                'FIREBASE_PROJECT_ID', 'FIREBASE_CREDENTIALS_JSON'
+            ];
+
+            const variables = [
+                'BROKER_TYPE', 'ALPACA_BASE_URL', 'FORCE_RUN',
+                'EMAIL_ENABLED', 'EMAIL_PROVIDER', 'SMTP_HOST', 'SMTP_PORT',
+                'PERSISTENCE_ENABLED'
+            ];
+
+            // Also add LEADERBOARD_API_URL as a secret (it's sensitive)
+            secrets.unshift('LEADERBOARD_API_URL');
+
+            let secretCommands = [];
+            let variableCommands = [];
+
+            // Generate secret commands
+            secrets.forEach(key => {
+                const value = formData.get(key);
+                if (value && value.trim()) {
+                    // Escape special characters for shell
+                    const escapedValue = value.replace(/'/g, "'\\''");
+                    secretCommands.push(`gh secret set ${key} --repo ${repo} --body '${escapedValue}'`);
+                }
+            });
+
+            // Generate variable commands
+            variables.forEach(key => {
+                let value = formData.get(key);
+                if (key === 'EMAIL_ENABLED') {
+                    value = document.getElementById('emailEnabled').checked ? 'true' : 'false';
+                } else if (key === 'PERSISTENCE_ENABLED') {
+                    value = document.getElementById('persistenceEnabled').checked ? 'true' : 'false';
+                }
+                if (value && value.trim()) {
+                    variableCommands.push(`gh variable set ${key} --repo ${repo} --body '${value}'`);
+                }
+            });
+
+            // Handle portfolio configuration based on mode
+            if (isSingleMode) {
+                // Single portfolio mode
+                const index = formData.get('TRADE_INDEX_SINGLE');
+                const capital = formData.get('INITIAL_CAPITAL_SINGLE');
+                const stockcount = formData.get('STOCKCOUNT_SINGLE');
+                const slack = formData.get('SLACK_SINGLE');
+
+                variableCommands.push(`gh variable set TRADE_INDICES --repo ${repo} --body '${index}'`);
+                variableCommands.push(`gh variable set INITIAL_CAPITAL --repo ${repo} --body '${capital}'`);
+
+                if (stockcount) {
+                    variableCommands.push(`gh variable set DEFAULT_STOCKCOUNT --repo ${repo} --body '${stockcount}'`);
+                }
+                if (slack) {
+                    variableCommands.push(`gh variable set DEFAULT_SLACK --repo ${repo} --body '${slack}'`);
+                }
+            } else {
+                // Multiple portfolios mode - use PORTFOLIO_CONFIG JSON
+                const portfolios = getPortfoliosData();
+
+                // Validate no duplicate indices
+                const indices = portfolios.map(p => p.portfolio_name);
+                const duplicates = indices.filter((item, index) => indices.indexOf(item) !== index);
+                if (duplicates.length > 0) {
+                    alert(`Error: Duplicate portfolio indices found: ${duplicates.join(', ')}. Each index can only be used once.`);
+                    return;
+                }
+
+                // Build PORTFOLIO_CONFIG JSON
+                const portfolioConfig = portfolios.map(p => {
+                    const config = {
+                        portfolio_name: p.portfolio_name,
+                        initial_capital: p.initial_capital,
+                        stockcount: p.stockcount,
+                        enabled: true
+                    };
+                    if (p.slack !== null) {
+                        config.slack = p.slack;
+                    }
+                    return config;
+                });
+
+                const configJson = JSON.stringify(portfolioConfig);
+                const escapedJson = configJson.replace(/'/g, "'\\''");
+                variableCommands.push(`gh variable set PORTFOLIO_CONFIG --repo ${repo} --body '${escapedJson}'`);
+
+                // Also set TRADE_INDICES for backwards compatibility
+                const tradeIndices = portfolios.map(p => p.portfolio_name).join(',');
+                variableCommands.push(`gh variable set TRADE_INDICES --repo ${repo} --body '${tradeIndices}'`);
+            }
+
+            // Display commands
+            document.getElementById('secretsCode').textContent = secretCommands.join('\n') || '# No secrets to set';
+            document.getElementById('variablesCode').textContent = variableCommands.join('\n') || '# No variables to set';
+            document.getElementById('allCode').textContent =
+                '# ===== SECRETS =====\n' +
+                (secretCommands.join('\n') || '# No secrets') +
+                '\n\n# ===== VARIABLES =====\n' +
+                (variableCommands.join('\n') || '# No variables');
+
+            document.getElementById('outputSection').classList.add('visible');
+            document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function copyCode(elementId) {
+            const code = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = event.target;
+                const original = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = original, 2000);
+            });
+        }
+
+        function downloadEnvFile() {
+            const form = document.getElementById('setupForm');
+            const formData = new FormData(form);
+            const isSingleMode = formData.get('portfolioMode') === 'single';
+
+            let envContent = '# QMS Trading Bot Configuration\n';
+            envContent += '# Generated from setup wizard\n\n';
+
+            envContent += '# Leaderboard API\n';
+            envContent += `LEADERBOARD_API_URL=${formData.get('LEADERBOARD_API_URL') || ''}\n`;
+            envContent += `LEADERBOARD_API_TOKEN=${formData.get('LEADERBOARD_API_TOKEN') || ''}\n\n`;
+
+            envContent += '# Broker Configuration\n';
+            envContent += `BROKER_TYPE=${formData.get('BROKER_TYPE') || 'alpaca'}\n`;
+            envContent += `ALPACA_API_KEY=${formData.get('ALPACA_API_KEY') || ''}\n`;
+            envContent += `ALPACA_API_SECRET=${formData.get('ALPACA_API_SECRET') || ''}\n`;
+            envContent += `ALPACA_BASE_URL=${formData.get('ALPACA_BASE_URL') || 'https://paper-api.alpaca.markets'}\n\n`;
+
+            envContent += '# Trading Configuration\n';
+
+            if (isSingleMode) {
+                // Single portfolio mode
+                const index = formData.get('TRADE_INDEX_SINGLE') || 'SP400';
+                const capital = formData.get('INITIAL_CAPITAL_SINGLE') || '10000';
+                const stockcount = formData.get('STOCKCOUNT_SINGLE') || '10';
+                const slack = formData.get('SLACK_SINGLE');
+
+                envContent += `TRADE_INDICES=${index}\n`;
+                envContent += `INITIAL_CAPITAL=${capital}\n`;
+                envContent += `DEFAULT_STOCKCOUNT=${stockcount}\n`;
+                if (slack) {
+                    envContent += `DEFAULT_SLACK=${slack}\n`;
+                }
+            } else {
+                // Multiple portfolios mode
+                const portfolios = getPortfoliosData();
+                const tradeIndices = portfolios.map(p => p.portfolio_name).join(',');
+
+                envContent += `TRADE_INDICES=${tradeIndices}\n`;
+
+                // Build PORTFOLIO_CONFIG JSON
+                const portfolioConfig = portfolios.map(p => {
+                    const config = {
+                        portfolio_name: p.portfolio_name,
+                        initial_capital: p.initial_capital,
+                        stockcount: p.stockcount,
+                        enabled: true
+                    };
+                    if (p.slack !== null) {
+                        config.slack = p.slack;
+                    }
+                    return config;
+                });
+
+                envContent += `PORTFOLIO_CONFIG='${JSON.stringify(portfolioConfig)}'\n`;
+
+                // Also add per-portfolio capital for backwards compatibility
+                portfolios.forEach(p => {
+                    envContent += `INITIAL_CAPITAL_${p.portfolio_name}=${p.initial_capital}\n`;
+                });
+            }
+
+            envContent += '\n';
+
+            const emailEnabled = document.getElementById('emailEnabled').checked;
+            envContent += '# Email Configuration\n';
+            envContent += `EMAIL_ENABLED=${emailEnabled}\n`;
+            if (emailEnabled) {
+                envContent += `EMAIL_PROVIDER=${formData.get('EMAIL_PROVIDER') || 'smtp'}\n`;
+                envContent += `EMAIL_RECIPIENT=${formData.get('EMAIL_RECIPIENT') || ''}\n`;
+                envContent += `SMTP_HOST=${formData.get('SMTP_HOST') || 'smtp.gmail.com'}\n`;
+                envContent += `SMTP_PORT=${formData.get('SMTP_PORT') || '587'}\n`;
+                envContent += `SMTP_USERNAME=${formData.get('SMTP_USERNAME') || ''}\n`;
+                envContent += `SMTP_PASSWORD=${formData.get('SMTP_PASSWORD') || ''}\n`;
+                envContent += `SMTP_FROM_EMAIL=${formData.get('SMTP_FROM_EMAIL') || ''}\n`;
+            }
+            envContent += '\n';
+
+            const persistenceEnabled = document.getElementById('persistenceEnabled').checked;
+            envContent += '# Persistence Configuration\n';
+            envContent += `PERSISTENCE_ENABLED=${persistenceEnabled}\n`;
+            if (persistenceEnabled) {
+                envContent += `FIREBASE_PROJECT_ID=${formData.get('FIREBASE_PROJECT_ID') || ''}\n`;
+                envContent += `# FIREBASE_CREDENTIALS_PATH=path/to/credentials.json\n`;
+            }
+
+            // Create download
+            const blob = new Blob([envContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '.env';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
