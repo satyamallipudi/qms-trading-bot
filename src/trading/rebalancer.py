@@ -724,20 +724,14 @@ class Rebalancer:
                                 if self.persistence_manager:
                                     from ..persistence.models import TradeRecord
                                     # Get current price for the trade record
-                                    current_price = next(
-                                        (alloc.current_price for alloc in final_allocations if alloc.symbol.upper() == symbol.upper()),
-                                        0.0
-                                    )
-                                    if current_price == 0.0:
-                                        # Try to get from current allocations if final_allocations not updated yet
-                                        try:
-                                            updated_allocations = self.broker.get_current_allocation()
-                                            current_price = next(
-                                                (alloc.current_price for alloc in updated_allocations if alloc.symbol.upper() == symbol.upper()),
-                                                allocation_per_stock  # Fallback to notional
-                                            )
-                                        except:
-                                            current_price = allocation_per_stock
+                                    try:
+                                        updated_allocations = self.broker.get_current_allocation()
+                                        current_price = next(
+                                            (alloc.current_price for alloc in updated_allocations if alloc.symbol.upper() == symbol.upper()),
+                                            allocation_per_stock  # Fallback to notional
+                                        )
+                                    except:
+                                        current_price = allocation_per_stock
                                     
                                     trade = TradeRecord(
                                         symbol=symbol,
