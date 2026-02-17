@@ -318,18 +318,17 @@ class Rebalancer:
                 except Exception as e:
                     logger.warning(f"[{self.portfolio_name}] Error reconciling ownership: {e}")
             
-            # Update quantities in buys
+            # Update quantities in buys using cost/price (not total broker position)
             for buy in buys:
                 for alloc in final_allocations:
                     if alloc.symbol.upper() == buy["symbol"].upper():
-                        buy["quantity"] = alloc.quantity
-                        # Update persistence trade record quantity if needed
-                        # (Ownership is already updated in record_trade, so this is mainly for logging)
+                        if alloc.current_price > 0:
+                            buy["quantity"] = round(buy["cost"] / alloc.current_price, 2)
                         break
         except Exception as e:
             logger.error(f"Error getting final allocations: {e}")
             final_allocations = []
-        
+
         return self._create_summary(buys, [], final_allocations, failed_trades=failed_trades)
     
     def _execute_week_over_week_rebalancing(
@@ -724,20 +723,14 @@ class Rebalancer:
                                 if self.persistence_manager:
                                     from ..persistence.models import TradeRecord
                                     # Get current price for the trade record
-                                    current_price = next(
-                                        (alloc.current_price for alloc in final_allocations if alloc.symbol.upper() == symbol.upper()),
-                                        0.0
-                                    )
-                                    if current_price == 0.0:
-                                        # Try to get from current allocations if final_allocations not updated yet
-                                        try:
-                                            updated_allocations = self.broker.get_current_allocation()
-                                            current_price = next(
-                                                (alloc.current_price for alloc in updated_allocations if alloc.symbol.upper() == symbol.upper()),
-                                                allocation_per_stock  # Fallback to notional
-                                            )
-                                        except:
-                                            current_price = allocation_per_stock
+                                    try:
+                                        updated_allocations = self.broker.get_current_allocation()
+                                        current_price = next(
+                                            (alloc.current_price for alloc in updated_allocations if alloc.symbol.upper() == symbol.upper()),
+                                            allocation_per_stock  # Fallback to notional
+                                        )
+                                    except:
+                                        current_price = allocation_per_stock
                                     
                                     trade = TradeRecord(
                                         symbol=symbol,
@@ -803,17 +796,13 @@ class Rebalancer:
                 except Exception as e:
                     logger.warning(f"[{self.portfolio_name}] Error reconciling ownership: {e}")
             
-            # Update quantities in buys (only if not dry-run, since in dry-run we don't have actual quantities)
+            # Update quantities in buys using cost/price (not total broker position)
             if not dry_run:
                 for buy in buys:
                     for alloc in final_allocations:
                         if alloc.symbol.upper() == buy["symbol"].upper():
-                            buy["quantity"] = alloc.quantity
-                            # Update persistence trade record with actual quantity
-                            if self.persistence_manager:
-                                # Find the most recent BUY trade for this symbol and update quantity
-                                # Note: This is a simplification - in production you might want to track trade IDs
-                                pass  # Quantity update handled in record_trade via ownership update
+                            if alloc.current_price > 0:
+                                buy["quantity"] = round(buy["cost"] / alloc.current_price, 2)
                             break
         except Exception as e:
             logger.error(f"Error getting final allocations: {e}")
@@ -855,21 +844,17 @@ class Rebalancer:
         for alloc in allocations:
             symbol = alloc.symbol.upper()
             if symbol in owned_symbols:
-                # Check if multiple portfolios own this symbol
-                portfolios_owning = self.persistence_manager.get_all_portfolios_owning_symbol(symbol)
-                if len(portfolios_owning) > 1:
-                    # Multiple portfolios own this - calculate this portfolio's fraction
-                    portfolio_fraction = self.persistence_manager.get_portfolio_fraction(symbol, self.portfolio_name)
+                # Use the ownership record quantity (what the bot actually bought),
+                # not the broker's total position (which may include manually held shares)
+                owned_quantity = self.persistence_manager.get_ownership_quantity(symbol, self.portfolio_name)
+                if owned_quantity > 0:
                     filtered_allocations.append(Allocation(
                         symbol=alloc.symbol,
-                        quantity=alloc.quantity * portfolio_fraction,
+                        quantity=owned_quantity,
                         current_price=alloc.current_price,
-                        market_value=alloc.market_value * portfolio_fraction,
+                        market_value=owned_quantity * alloc.current_price,
                     ))
-                else:
-                    # Only this portfolio owns it - use full allocation
-                    filtered_allocations.append(alloc)
-        
+
         return filtered_allocations
     
     def _create_summary(

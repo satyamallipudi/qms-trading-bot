@@ -758,26 +758,15 @@ class PersistenceManager:
             return {'updated': 0, 'fixed': 0}
         
         # Get broker positions for this portfolio
+        # We only use broker data for current_price; quantities come from ownership records
         broker_positions = {}
         for alloc in broker_allocations:
             symbol = alloc.symbol.upper()
             # Check if this portfolio owns this symbol
             if symbol in self.get_owned_symbols(portfolio_name):
-                # Get portfolio fraction if multiple portfolios own it
-                portfolios_owning = self.get_all_portfolios_owning_symbol(symbol)
-                if len(portfolios_owning) > 1:
-                    portfolio_fraction = self.get_portfolio_fraction(symbol, portfolio_name)
-                    broker_positions[symbol] = {
-                        'quantity': alloc.quantity * portfolio_fraction,
-                        'current_price': alloc.current_price,
-                        'market_value': alloc.market_value * portfolio_fraction,
-                    }
-                else:
-                    broker_positions[symbol] = {
-                        'quantity': alloc.quantity,
-                        'current_price': alloc.current_price,
-                        'market_value': alloc.market_value,
-                    }
+                broker_positions[symbol] = {
+                    'current_price': alloc.current_price,
+                }
         
         # Get DB ownership records
         ownership_ref = self.db.collection('ownership')
@@ -793,32 +782,13 @@ class PersistenceManager:
             data = doc.to_dict()
             symbol = data.get('symbol', '').upper()
             db_quantity = data.get('quantity', 0.0)
-            db_total_cost = data.get('total_cost', 0.0)
-            
+
             if symbol in broker_positions:
-                broker_quantity = broker_positions[symbol]['quantity']
-                broker_price = broker_positions[symbol]['current_price']
-                
-                # Check if quantity needs fixing
-                quantity_diff = abs(db_quantity - broker_quantity)
-                if quantity_diff > 0.01:  # More than 0.01 shares difference
-                    # Update quantity to match broker
-                    doc.reference.update({
-                        'quantity': broker_quantity,
-                        'last_updated': datetime.now(),
-                    })
-                    fixed_count += 1
-                    updated_count += 1
-                    logger.info(f"Fixed quantity for {symbol} in {portfolio_name}: DB={db_quantity:.2f} -> Broker={broker_quantity:.2f}")
-                elif db_quantity == 0 and broker_quantity > 0:
-                    # Quantity was 0, now we have actual quantity
-                    doc.reference.update({
-                        'quantity': broker_quantity,
-                        'last_updated': datetime.now(),
-                    })
-                    fixed_count += 1
-                    updated_count += 1
-                    logger.info(f"Set quantity for {symbol} in {portfolio_name}: {broker_quantity:.2f} (was 0)")
+                # Mark as reconciled (broker confirms the position exists)
+                doc.reference.update({
+                    'reconciled_at': datetime.now(),
+                })
+                updated_count += 1
             elif db_quantity > 0:
                 # Broker doesn't have this position but DB says we own it
                 # This might be an external sale - don't update here, let detect_external_sales handle it
