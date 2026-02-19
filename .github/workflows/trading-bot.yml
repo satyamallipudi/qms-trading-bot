@@ -61,7 +61,7 @@ jobs:
           LEADERBOARD_API_TOKEN: ${{ secrets.LEADERBOARD_API_TOKEN }}
 
           # Broker Configuration
-          BROKER_TYPE: ${{ vars.BROKER_TYPE }}
+          BROKER_TYPE: ${{ env.vars.BROKER_TYPE }}
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
           ALPACA_BASE_URL: ${{ vars.ALPACA_BASE_URL }}
